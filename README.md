@@ -1,6 +1,6 @@
 # AniThink — Cyberpunk Edition
 
-Современная киберпанк-платформа для просмотра аниме на базе **Shikimori API**.
+Современная футуристическая-платформа для просмотра аниме на базе **Shikimori API**.
 Стек: **Next.js (App Router) + TypeScript + Tailwind CSS + Framer Motion + Lucide + Axios**.
 
 ## ✨ Возможности
