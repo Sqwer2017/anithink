@@ -4,6 +4,7 @@ import { Heart, ListPlus, Star } from "lucide-react";
 import { useEffect, useState } from "react";
 import { KinoBoxPlayer } from "@/components/player/kinobox-player";
 import { PlaylistDialog } from "@/components/anime/playlist-dialog";
+import { WATCH_STATUS_STORAGE_KEY } from "@/lib/local-playlists";
 
 interface AnimeWatchCardProps {
   shikimoriId: string | number;
@@ -14,7 +15,6 @@ interface AnimeWatchCardProps {
 const FAVORITES_STORAGE_KEY = "anithink:favorites";
 const WATCH_LATER_STORAGE_KEY = "anithink:playlist:watch-later";
 const RATINGS_STORAGE_KEY = "anithink:ratings";
-const WATCH_STATUS_STORAGE_KEY = "anithink:watch-statuses";
 
 const WATCH_STATUSES = [
   { value: "watching", label: "Смотрю" },

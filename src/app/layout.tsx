@@ -54,7 +54,8 @@ export default function RootLayout({
           {/* Безопасный клиентский Locator */}
           <LocatorProvider />
 
-          <div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
+          <div className="cyber-background" aria-hidden="true" />
+          <div className="relative z-10 flex h-screen w-full overflow-hidden bg-transparent text-foreground">
             <div className="flex min-w-0 flex-1 flex-col">
               <Header />
               <main className="flex-1 overflow-y-auto scrollbar-cyber pb-20 lg:pb-0">

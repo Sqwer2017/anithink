@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
@@ -8,6 +8,7 @@ import { Menu, X } from "lucide-react";
 import { MAIN_NAV, PROFILE_NAV, LOGOUT_NAV } from "@/lib/navigation";
 import { ACCENT_THEMES, useTheme, type ThemeAccent } from "@/components/providers/theme-provider";
 import { cn } from "@/lib/utils";
+import { readProfile, type LocalProfile } from "@/lib/local-profile";
 
 /**
  * Мобильная навигация.
@@ -21,6 +22,14 @@ import { cn } from "@/lib/utils";
 export function MobileNav() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const [profile, setProfile] = useState<LocalProfile | null>(null);
+
+  useEffect(() => {
+    const syncProfile = () => setProfile(readProfile());
+    syncProfile();
+    window.addEventListener("anithink:profile-changed", syncProfile);
+    return () => window.removeEventListener("anithink:profile-changed", syncProfile);
+  }, []);
 
   // 5 пунктов в нижней панели; «Ещё» открывает drawer
   const quickNav = [
@@ -92,12 +101,12 @@ export function MobileNav() {
               {/* Header drawer */}
               <div className="flex items-center justify-between border-b border-border px-4 py-4">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent-gradient font-bold text-background ring-2 ring-accent shadow-neon-sm">
-                    AT
+                  <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-accent-gradient font-bold text-background ring-2 ring-accent shadow-neon-sm">
+                    {profile?.avatar ? <img src={profile.avatar} alt="" className="h-full w-full object-cover" /> : (profile?.nickname || "AT").slice(0, 2).toUpperCase()}
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-foreground">@cyber_otaku</p>
-                    <p className="text-[11px] text-muted">LVL 47 · Sensei</p>
+                    <p className="text-sm font-semibold text-foreground">@{profile?.tag || "anithink_user"}</p>
+                    <p className="text-[11px] text-muted">LVL 0 · Sensei</p>
                   </div>
                 </div>
                 <button

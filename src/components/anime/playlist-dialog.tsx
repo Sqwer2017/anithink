@@ -2,7 +2,7 @@
 
 import { Camera, Check, Plus, X } from "lucide-react";
 import { useState } from "react";
-import { readPlaylists, savePlaylists, type LocalPlaylist } from "@/lib/local-playlists";
+import { createLocalId, readPlaylists, savePlaylists, type LocalPlaylist } from "@/lib/local-playlists";
 
 export function PlaylistDialog({ animeId, onClose }: { animeId: string; onClose: () => void }) {
   const [playlists, setPlaylists] = useState<LocalPlaylist[]>(readPlaylists);
@@ -18,7 +18,7 @@ export function PlaylistDialog({ animeId, onClose }: { animeId: string; onClose:
     const trimmedName = name.trim();
     if (!trimmedName) return;
     const playlist: LocalPlaylist = {
-      id: crypto.randomUUID(), name: trimmedName, cover: cover.trim(), animeIds: [animeId], createdAt: Date.now(),
+      id: createLocalId(), name: trimmedName, cover: cover.trim(), animeIds: [animeId], createdAt: Date.now(),
     };
     update([playlist, ...playlists]);
     setName("");

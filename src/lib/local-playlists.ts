@@ -8,6 +8,12 @@ export interface LocalPlaylist {
 
 export const PLAYLISTS_STORAGE_KEY = "anithink:playlists";
 export const HISTORY_STORAGE_KEY = "anithink:history";
+export const WATCH_STATUS_STORAGE_KEY = "anithink:watch-statuses";
+
+export function createLocalId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
 
 export function readPlaylists(): LocalPlaylist[] {
   try {
