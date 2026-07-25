@@ -40,9 +40,14 @@ export function ArticleContent({ html }: { html: string }) {
         // скрываем превью и кнопку, показываем iframe
         const preview = frame.querySelector("img");
         const btn = frame.querySelector(".video-play-btn");
-        if (preview) preview.style.display = "none";
-        if (btn) btn.style.display = "none";
-        frame.appendChild(iframe);
+
+        if (preview && preview instanceof HTMLElement) {
+        preview.style.display = "none";
+        }
+        
+        if (btn && btn instanceof HTMLElement) {
+          btn.style.display = "none";
+        }
       };
 
       frame.addEventListener("click", activate);
