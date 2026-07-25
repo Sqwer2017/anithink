@@ -1,0 +1,350 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   ANIME X — Динамическая тема (Material You стиль)
+   Корневые переменные меняют акцентный цвет через
+   атрибут [data-theme] на <html>. Tailwind читает их через
+   rgb(var(--accent) / <alpha-value>).
+   ============================================================ */
+
+@layer base {
+  :root {
+    /* Статичные фоны киберпанк-темы */
+    --bg-main: 5 10 21;          /* #050a15 */
+    --bg-panel: 10 15 26;        /* #0a0f1a */
+    --bg-panel-2: 14 20 33;      /* чуть светлее для вложенных панелей */
+    --border: 30 41 59;          /* slate-800-ish */
+
+    /* Текст */
+    --fg: 226 232 240;           /* slate-200 */
+    --fg-muted: 100 116 139;     /* slate-500 */
+
+    /* Акцент по умолчанию: Неоновый зелёный #c7ff00 */
+    --accent: 199 255 0;
+    --accent-soft: 199 255 0;
+    --accent-glow: 199 255 0;
+
+    --font-sans: "Inter", "Segoe UI", system-ui, sans-serif;
+    --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  }
+
+  /* Тема: Ледяной синий */
+  [data-theme="blue"] {
+    --accent: 0 229 255;       /* #00e5ff */
+    --accent-soft: 0 229 255;
+    --accent-glow: 0 229 255;
+  }
+
+  /* Тема: Фиолетовый */
+  [data-theme="violet"] {
+    --accent: 176 0 255;       /* #b000ff */
+    --accent-soft: 176 0 255;
+    --accent-glow: 176 0 255;
+  }
+
+  /* Тема: Красный */
+  [data-theme="red"] {
+    --accent: 255 42 42;       /* #ff2a2a */
+    --accent-soft: 255 42 42;
+    --accent-glow: 255 42 42;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+    /* Лёгкий киберпанк-градиент на фоне */
+    background-image:
+      radial-gradient(circle at 0% 0%, rgb(var(--accent) / 0.06), transparent 40%),
+      radial-gradient(circle at 100% 100%, rgb(var(--accent) / 0.04), transparent 40%);
+    background-attachment: fixed;
+    transition: background-image 0.6s ease;
+    overflow-x: hidden;
+  }
+
+  body::before,
+  body::after {
+    content: "";
+    position: fixed;
+    z-index: -1;
+    width: 34rem;
+    height: 34rem;
+    border-radius: 9999px;
+    pointer-events: none;
+    filter: blur(75px);
+    opacity: 0.11;
+    background: rgb(var(--accent-glow));
+    animation: cyber-drift 18s ease-in-out infinite alternate;
+  }
+  body::before { top: 10%; left: -14rem; }
+  body::after { right: -16rem; bottom: -12rem; animation-delay: -8s; }
+
+  html::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0.6;
+    background-image: radial-gradient(circle, rgb(var(--accent) / 0.9) 1px, transparent 1.5px), radial-gradient(circle, rgb(var(--accent-glow) / 0.5) 1px, transparent 2px);
+    background-size: 105px 160px, 165px 230px;
+    background-position: 0 100vh, 48px 110vh;
+    animation: cyber-particles 18s linear infinite;
+  }
+}
+
+@keyframes cyber-drift { from { transform: translate3d(0, 0, 0) scale(0.8); } to { transform: translate3d(14vw, -8vh, 0) scale(1.25); } }
+@keyframes cyber-particles { to { background-position: 70px -180px, -80px -250px; } }
+
+/* ============================================================
+   Кастомный скроллбар
+   Тонкий, подсвечивается акцентом при наведении.
+   ============================================================ */
+
+@layer utilities {
+  /* Прячем стандартный скроллбар Windows/браузера */
+  .scrollbar-none {
+    -ms-overflow-style: none;   /* IE/Edge */
+    scrollbar-width: none;       /* Firefox */
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Аккуратный кастомный скроллбар */
+  .scrollbar-cyber {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--accent) / 0.25) transparent;
+    transition: scrollbar-color 0.3s ease;
+  }
+  .scrollbar-cyber:hover {
+    scrollbar-color: rgb(var(--accent) / 0.7) transparent;
+  }
+  .scrollbar-cyber::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-cyber::-webkit-scrollbar-track {
+    background: transparent;
+    margin: 4px 0;
+  }
+  .scrollbar-cyber::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--accent) / 0.2);
+    border-radius: 9999px;
+    transition: background-color 0.3s ease, box-shadow 0.3s ease;
+  }
+  .scrollbar-cyber:hover::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--accent) / 0.8);
+    box-shadow: 0 0 8px rgb(var(--accent-glow) / 0.7);
+  }
+
+  /* Акцентный текст-градиент */
+  .text-glow {
+    text-shadow: 0 0 12px rgb(var(--accent-glow) / 0.7);
+  }
+
+  .border-gradient-accent {
+    border-image: linear-gradient(
+        135deg,
+        rgb(var(--accent) / 0.8),
+        rgb(var(--accent-glow) / 0.1)
+      )
+      1;
+  }
+
+  /* Тонкая сетка как фон панелей */
+  .bg-cyber-grid {
+    background-size: 28px 28px;
+    background-image: var(--tw-bg-grid, none);
+  }
+}
+
+@layer components {
+  .glass {
+    @apply bg-surface/70 backdrop-blur-xl border border-border;
+  }
+
+  .neon-text {
+    color: rgb(var(--accent));
+    text-shadow: 0 0 10px rgb(var(--accent-glow) / 0.65);
+  }
+}
+
+/* ============================================================
+   Типографика HTML-контента статей (body_html из Shikimori).
+   Shikimori отдаёт блоки <p>, <b>, <img>, <br>, <div> и пр.
+   ============================================================ */
+.prose-cyber {
+  color: rgb(var(--fg) / 0.9);
+  font-size: 0.95rem;
+  line-height: 1.75;
+  word-break: break-word;
+}
+.prose-cyber p {
+  margin-bottom: 1em;
+}
+.prose-cyber b,
+.prose-cyber strong {
+  color: rgb(var(--fg));
+  font-weight: 700;
+}
+.prose-cyber a {
+  color: rgb(var(--accent));
+  text-decoration: none;
+  border-bottom: 1px solid rgb(var(--accent) / 0.4);
+  transition: opacity 0.2s;
+}
+.prose-cyber a:hover {
+  opacity: 0.8;
+}
+.prose-cyber img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.75rem;
+  margin: 1em auto;          /* по центру */
+  border: 1px solid rgb(var(--border));
+  display: block;
+}
+
+/* ── Медиа-блоки: центрирование + неоновая обводка ── */
+.prose-cyber .media-embed {
+  margin: 1.5em auto;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.prose-cyber .media-embed img {
+  max-width: 100%;
+  border-radius: 1rem;
+  border: 1px solid rgb(var(--accent) / 0.35);
+  box-shadow:
+    0 0 0 1px rgb(var(--accent) / 0.1),
+    0 8px 30px rgba(0, 0, 0, 0.5),
+    0 0 24px rgb(var(--accent-glow) / 0.15);
+  transition: box-shadow 0.3s ease, transform 0.3s ease;
+}
+.prose-cyber .media-embed img:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 0 0 1px rgb(var(--accent) / 0.3),
+    0 12px 40px rgba(0, 0, 0, 0.6),
+    0 0 36px rgb(var(--accent-glow) / 0.3);
+}
+
+/* ── Встроенное YouTube-видео ── */
+.prose-cyber .video-embed {
+  width: 100%;
+}
+.prose-cyber .video-frame {
+  position: relative;
+  width: 100%;
+  max-width: 720px;
+  aspect-ratio: 16 / 9;
+  margin: 0 auto;
+  border-radius: 1rem;
+  overflow: hidden;
+  cursor: pointer;
+  border: 1px solid rgb(var(--accent) / 0.35);
+  box-shadow:
+    0 8px 30px rgba(0, 0, 0, 0.5),
+    0 0 24px rgb(var(--accent-glow) / 0.15);
+  transition: box-shadow 0.3s ease, transform 0.3s ease;
+}
+.prose-cyber .video-frame:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.6),
+    0 0 40px rgb(var(--accent-glow) / 0.35);
+}
+.prose-cyber .video-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+}
+.prose-cyber .video-frame iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 1rem;
+}
+.prose-cyber .video-play-btn {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 64px;
+  height: 64px;
+  border-radius: 9999px;
+  border: none;
+  background: rgb(var(--accent) / 0.95);
+  color: rgb(var(--bg-main));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 0 0 4px rgb(var(--accent) / 0.2), 0 0 30px rgb(var(--accent-glow) / 0.7);
+}
+.prose-cyber .video-frame:hover .video-play-btn {
+  transform: translate(-50%, -50%) scale(1.12);
+}
+.prose-cyber .video-play-btn svg {
+  margin-left: 3px;  /* визуальная компенсация треугольника */
+}
+.prose-cyber br + br {
+  display: block;
+  content: "";
+  margin-top: 1em;
+}
+.prose-cyber blockquote {
+  border-left: 3px solid rgb(var(--accent) / 0.5);
+  padding-left: 1rem;
+  margin: 1em 0;
+  color: rgb(var(--fg-muted));
+  font-style: italic;
+}
+.prose-cyber ul,
+.prose-cyber ol {
+  margin: 1em 0;
+  padding-left: 1.5rem;
+}
+.prose-cyber ul {
+  list-style: disc;
+}
+.prose-cyber ol {
+  list-style: decimal;
+}
+.prose-cyber li {
+  margin-bottom: 0.5em;
+}
+.prose-cyber span.spoiler,
+.prose-cyber span.b-spoiler {
+  background: rgb(var(--fg) / 0.15);
+  color: transparent;
+  border-radius: 0.25rem;
+  padding: 0 0.25rem;
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s;
+}
+.prose-cyber span.spoiler:hover,
+.prose-cyber span.b-spoiler:hover,
+.prose-cyber span.spoiler.shown,
+.prose-cyber span.b-spoiler.shown {
+  background: rgb(var(--accent) / 0.15);
+  color: rgb(var(--fg));
+}

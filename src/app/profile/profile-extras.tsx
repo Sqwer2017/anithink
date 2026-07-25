@@ -1,0 +1,15 @@
+"use client";
+
+import { Clock3, Film, Gamepad2, Send, Camera, MessageCircle } from "lucide-react";
+import { useEffect, useState } from "react";
+import { readProfile, saveProfile, type LocalProfile } from "@/lib/local-profile";
+
+const characterIds = [80, 40, 4224];
+
+export function ProfileExtras() {
+  const [profile, setProfile] = useState<LocalProfile | null>(null); const [historyCount, setHistoryCount] = useState(0);
+  useEffect(() => { const current = readProfile(); setProfile(current); try { const history: unknown = JSON.parse(window.localStorage.getItem("anithink:history") ?? "[]"); setHistoryCount(Array.isArray(history) ? history.length : 0); } catch {} }, []);
+  const upload = (file?: File) => { if (!file || !profile) return; const reader = new FileReader(); reader.onload = () => { const next = { ...profile, cover: String(reader.result) }; setProfile(next); saveProfile(next); }; reader.readAsDataURL(file); };
+  return <section className="mb-6 overflow-hidden rounded-3xl border border-border bg-card shadow-cyber"><label className="relative block h-40 cursor-pointer overflow-hidden bg-[radial-gradient(circle_at_20%_30%,rgb(var(--accent)/0.45),transparent_25%),linear-gradient(120deg,rgb(var(--bg-panel-2)),rgb(var(--bg-main)))]"><input type="file" accept="image/*" className="hidden" onChange={(event) => upload(event.target.files?.[0])} />{profile?.cover && <img src={profile.cover} alt="" className="h-full w-full object-cover opacity-75" />}<span className="absolute inset-0 flex items-center justify-center gap-2 bg-background/0 text-sm font-semibold text-foreground opacity-0 transition-opacity hover:bg-background/40 hover:opacity-100"><Camera className="h-4 w-4" />Загрузить баннер</span></label><div className="grid gap-4 p-5 lg:grid-cols-[1fr_auto]"><div><p className="text-sm text-muted">Профиль</p><h1 className="font-display text-3xl font-extrabold">{profile?.nickname || "AniThink User"}</h1><p className="mt-1 text-sm text-accent">@{profile?.tag || "anithink_user"}</p><div className="mt-4 flex items-center gap-2"><span className="text-xs font-semibold text-muted">Любимые персонажи</span>{characterIds.map((id) => <img key={id} src={`https://shikimori.one/system/characters/original/${id}.jpg`} alt="" className="h-9 w-9 rounded-full border-2 border-accent/60 object-cover" />)}</div></div><div className="grid grid-cols-2 gap-3"><Stat icon={Clock3} label="Затрачено времени" value={`${Math.round(historyCount * 24 / 60)} ч`} /><Stat icon={Film} label="Просмотрено" value={`${historyCount} тайтлов`} /></div></div><div className="flex gap-2 border-t border-border px-5 py-3 text-muted"><MessageCircle className="h-4 w-4 hover:text-accent" /><Send className="h-4 w-4 hover:text-accent" /><Gamepad2 className="h-4 w-4 hover:text-accent" /></div></section>;
+}
+function Stat({ icon: Icon, label, value }: { icon: typeof Clock3; label: string; value: string }) { return <div className="min-w-32 rounded-xl border border-border bg-surface p-3"><Icon className="h-4 w-4 text-accent" /><p className="mt-2 text-[11px] text-muted">{label}</p><p className="text-sm font-bold">{value}</p></div>; }
