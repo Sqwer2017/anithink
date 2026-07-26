@@ -104,6 +104,20 @@ export interface Anime {
 
 const SHIKIMORI_HOST = "https://shikimori.one";
 
+async function shikimoriFetch(url: string, revalidate: number) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetch(url, { headers: SHIKIMORI_HEADERS, next: { revalidate } });
+      if (response.ok || response.status < 500 || attempt === 2) return response;
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 350 * (attempt + 1)));
+  }
+  throw lastError ?? new Error("Shikimori request failed");
+}
+
 export function buildImageUrl(
   url?: string | null,
   size: "original" | "preview" | "x96" = "original"
@@ -173,10 +187,7 @@ export async function fetchAnimes(
   const url = `${SHIKIMORI_BASE_URL}/animes?${params.toString()}`;
 
   try {
-    const res = await fetch(url, {
-      headers: SHIKIMORI_HEADERS,
-      next: { revalidate },
-    });
+    const res = await shikimoriFetch(url, revalidate);
     if (!res.ok) {
       console.warn(`[Shikimori] fetchAnimes -> ${res.status}`);
       return [];
@@ -194,10 +205,7 @@ export async function fetchAnimeById(
   revalidate = 3600,
 ): Promise<Anime | null> {
   try {
-    const res = await fetch(`${SHIKIMORI_BASE_URL}/animes/${id}`, {
-      headers: SHIKIMORI_HEADERS,
-      next: { revalidate },
-    });
+    const res = await shikimoriFetch(`${SHIKIMORI_BASE_URL}/animes/${id}`, revalidate);
     if (!res.ok) return null;
     return (await res.json()) as Anime;
   } catch {
@@ -219,10 +227,7 @@ export async function fetchGenres(
   revalidate = 86400,
 ): Promise<Genre[]> {
   try {
-    const res = await fetch(`${SHIKIMORI_BASE_URL}/genres`, {
-      headers: SHIKIMORI_HEADERS,
-      next: { revalidate },
-    });
+    const res = await shikimoriFetch(`${SHIKIMORI_BASE_URL}/genres`, revalidate);
     if (!res.ok) return [];
     return (await res.json()) as Genre[];
   } catch {
@@ -414,10 +419,7 @@ export async function fetchTopics(
   const url = `${SHIKIMORI_BASE_URL}/topics?${params.toString()}`;
 
   try {
-    const res = await fetch(url, {
-      headers: SHIKIMORI_HEADERS,
-      next: { revalidate },
-    });
+    const res = await shikimoriFetch(url, revalidate);
     if (!res.ok) return [];
     return (await res.json()) as Topic[];
   } catch {
@@ -431,10 +433,7 @@ export async function fetchTopicById(
   revalidate = 3600,
 ): Promise<Topic | null> {
   try {
-    const res = await fetch(`${SHIKIMORI_BASE_URL}/topics/${id}`, {
-      headers: SHIKIMORI_HEADERS,
-      next: { revalidate },
-    });
+    const res = await shikimoriFetch(`${SHIKIMORI_BASE_URL}/topics/${id}`, revalidate);
     if (!res.ok) return null;
     return (await res.json()) as Topic;
   } catch {
@@ -486,10 +485,7 @@ export async function fetchComments(
   const url = `${SHIKIMORI_BASE_URL}/comments?${params.toString()}`;
 
   try {
-    const res = await fetch(url, {
-      headers: SHIKIMORI_HEADERS,
-      next: { revalidate },
-    });
+    const res = await shikimoriFetch(url, revalidate);
     if (!res.ok) return [];
     return (await res.json()) as Comment[];
   } catch {

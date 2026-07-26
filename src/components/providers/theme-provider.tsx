@@ -10,11 +10,12 @@ import {
   type ReactNode,
 } from "react";
 
-export type ThemeAccent = "green" | "blue" | "violet" | "red";
+export type ThemeAccent = "green" | "blue" | "violet" | "red" | "custom";
 
 interface ThemeContextValue {
   accent: ThemeAccent;
   setAccent: (t: ThemeAccent) => void;
+  setCustomAccent: (color: string) => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -46,6 +47,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // Применяем тему к <html>
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", accent);
+    if (accent === "custom") {
+      const color = window.localStorage.getItem("anithink:custom-accent") || "#b000ff";
+      const hex = color.replace("#", "");
+      if (/^[0-9a-fA-F]{6}$/.test(hex)) { const rgb = `${parseInt(hex.slice(0, 2), 16)} ${parseInt(hex.slice(2, 4), 16)} ${parseInt(hex.slice(4, 6), 16)}`; document.documentElement.style.setProperty("--accent", rgb); document.documentElement.style.setProperty("--accent-soft", rgb); document.documentElement.style.setProperty("--accent-glow", rgb); }
+    } else { document.documentElement.style.removeProperty("--accent"); document.documentElement.style.removeProperty("--accent-soft"); document.documentElement.style.removeProperty("--accent-glow"); }
   }, [accent]);
 
   const setAccent = useCallback((t: ThemeAccent) => {
@@ -57,9 +63,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const setCustomAccent = useCallback((color: string) => { window.localStorage.setItem("anithink:custom-accent", color); setAccentState("custom"); window.localStorage.setItem(STORAGE_KEY, "custom"); const hex = color.replace("#", ""); if (/^[0-9a-fA-F]{6}$/.test(hex)) { const rgb = `${parseInt(hex.slice(0, 2), 16)} ${parseInt(hex.slice(2, 4), 16)} ${parseInt(hex.slice(4, 6), 16)}`; document.documentElement.style.setProperty("--accent", rgb); document.documentElement.style.setProperty("--accent-soft", rgb); document.documentElement.style.setProperty("--accent-glow", rgb); } }, []);
+
   const value = useMemo(
-    () => ({ accent, setAccent }),
-    [accent, setAccent],
+    () => ({ accent, setAccent, setCustomAccent }),
+    [accent, setAccent, setCustomAccent],
   );
 
   return (
@@ -83,4 +91,5 @@ export const ACCENT_THEMES: {
   { id: "blue", label: "Ice", color: "#00e5ff" },
   { id: "violet", label: "Vapor", color: "#b000ff" },
   { id: "red", label: "Blood", color: "#ff2a2a" },
+  { id: "custom", label: "Custom", color: "#b000ff" },
 ];

@@ -13,6 +13,7 @@ import {
 } from "@/lib/api/shikimori";
 import { AnimeCommentsSection } from "./_components/anime-comments-section";
 import { AnimeHistoryTracker } from "@/components/anime/anime-history-tracker";
+import { PosterPlaceholder } from "@/components/anime/poster-placeholder";
 
 export const revalidate = 0;
 
@@ -59,7 +60,7 @@ export default async function AnimePage({
         {/* Постер */}
         <div className="mx-auto w-full max-w-[280px] md:mx-0">
           <div className="relative aspect-[2/3] overflow-hidden rounded-2xl border border-border bg-surface shadow-panel">
-            {poster && (
+            {poster ? (
               <Image
                 src={poster}
                 alt={title}
@@ -67,7 +68,7 @@ export default async function AnimePage({
                 sizes="280px"
                 className="object-cover"
               />
-            )}
+            ) : <PosterPlaceholder title={title} />}
           </div>
         </div>
 

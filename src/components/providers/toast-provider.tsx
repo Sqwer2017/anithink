@@ -1,0 +1,6 @@
+"use client";
+import { CheckCircle2, XCircle } from "lucide-react";
+import { useEffect, useState } from "react";
+type Toast = { message: string; error?: boolean };
+export function toast(message: string, error = false) { window.dispatchEvent(new CustomEvent<Toast>("anithink:toast", { detail: { message, error } })); }
+export function ToastProvider() { const [item, setItem] = useState<Toast | null>(null); useEffect(() => { const show = (event: Event) => setItem((event as CustomEvent<Toast>).detail); window.addEventListener("anithink:toast", show); return () => window.removeEventListener("anithink:toast", show); }, []); useEffect(() => { if (!item) return; const timer = window.setTimeout(() => setItem(null), 3200); return () => window.clearTimeout(timer); }, [item]); return item ? <div className={`animate-toast fixed bottom-5 left-1/2 z-[100] flex -translate-x-1/2 items-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold shadow-panel ${item.error ? "border-red-400/40 bg-red-950 text-red-100" : "border-accent/50 bg-surface text-foreground"}`}>{item.error ? <XCircle className="h-5 w-5 text-red-300" /> : <CheckCircle2 className="h-5 w-5 text-accent" />}{item.message}</div> : null; }

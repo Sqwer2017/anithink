@@ -6,6 +6,7 @@ import { LocatorProvider } from "@/components/providers/locator-provider";
 import { Header } from "@/components/layout/header";
 import { RightSidebar } from "@/components/layout/right-sidebar";
 import { MobileNav } from "@/components/layout/mobile-nav";
+import { ToastProvider } from "@/components/providers/toast-provider";
 
 const inter = Inter({
   subsets: ["latin", "cyrillic"],
@@ -53,6 +54,7 @@ export default function RootLayout({
         <ThemeProvider>
           {/* Безопасный клиентский Locator */}
           <LocatorProvider />
+          <ToastProvider />
 
           <div className="cyber-background" aria-hidden="true" />
           <div className="relative z-10 flex h-screen w-full overflow-hidden bg-transparent text-foreground">

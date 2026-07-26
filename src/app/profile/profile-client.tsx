@@ -6,8 +6,9 @@ import { readProfile, saveProfile, type LocalProfile } from "@/lib/local-profile
 import { HISTORY_STORAGE_KEY, WATCH_STATUS_STORAGE_KEY } from "@/lib/local-playlists";
 import { AnimeCard } from "@/components/anime/anime-card";
 import type { Anime } from "@/lib/api/shikimori";
+import { compressImage } from "@/lib/local-media";
+import { toast } from "@/components/providers/toast-provider";
 
-const readImage = (file: File) => new Promise<string>((resolve) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsDataURL(file); });
 
 function readIds(key: string) {
   try { const value: unknown = JSON.parse(window.localStorage.getItem(key) ?? "[]"); return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : []; } catch { return []; }
@@ -44,7 +45,7 @@ export function ProfileClient() {
 
   if (!profile) return null;
   const persist = (next: LocalProfile) => { setProfile(next); saveProfile(next); };
-  const upload = async (field: "avatar" | "cover", file?: File) => { if (file) persist({ ...profile, [field]: await readImage(file) }); };
+  const upload = async (field: "avatar" | "cover", file?: File) => { if (!file) return; try { persist({ ...profile, [field]: await compressImage(file) }); toast(field === "avatar" ? "Аватар сохранён" : "Баннер сохранён"); } catch { toast("Не удалось сохранить изображение", true); } };
   const updateCharacter = (index: number, value: string) => { const ids = [...profile.characterIds]; ids[index] = value.replace(/\D/g, ""); persist({ ...profile, characterIds: ids }); };
   const episodes = completed.reduce((total, anime) => total + (anime.episodes || anime.episodes_aired || 0), 0);
   const minutes = completed.reduce((total, anime) => total + (anime.duration || 0) * (anime.episodes || anime.episodes_aired || 0), 0);
@@ -84,7 +85,7 @@ export function ProfileClient() {
           <Social icon={MessageCircle} value={profile.discord} placeholder="Discord link" onChange={(discord) => setProfile({ ...profile, discord })} />
           <Social icon={Gamepad2} value={profile.steam} placeholder="Steam link" onChange={(steam) => setProfile({ ...profile, steam })} />
         </div>
-        <button type="button" onClick={() => persist(profile)} className="relative z-10 mt-5 inline-flex min-h-11 items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-bold text-background">
+        <button type="button" onClick={() => { persist(profile); toast("Профиль сохранён"); }} className="relative z-10 mt-5 inline-flex min-h-11 items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-bold text-background">
           <Save className="h-4 w-4" />Сохранить профиль
         </button>
       </div>

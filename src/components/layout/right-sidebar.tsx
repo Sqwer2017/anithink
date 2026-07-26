@@ -34,7 +34,7 @@ export function RightSidebar() {
   const [open, setOpen] = useState(false);
   const [profile, setProfile] = useState<LocalProfile | null>(null);
   const [notificationCount, setNotificationCount] = useState(0);
-  useEffect(() => { const syncProfile = () => setProfile(readProfile()); const syncNotifications = (event: Event) => setNotificationCount((event as CustomEvent<number>).detail); syncProfile(); window.addEventListener("anithink:profile-changed", syncProfile); window.addEventListener("anithink:notifications-changed", syncNotifications); void fetch("/api/notifications").then((response) => response.json()).then((data) => { const items = [...data.news, ...data.ongoing]; const seen: unknown = JSON.parse(window.localStorage.getItem("anithink:notifications-seen") ?? "[]"); const seenIds = new Set(Array.isArray(seen) ? seen : []); setNotificationCount(items.filter((item: { id: string }) => !seenIds.has(item.id)).length); }).catch(() => {}); return () => { window.removeEventListener("anithink:profile-changed", syncProfile); window.removeEventListener("anithink:notifications-changed", syncNotifications); }; }, []);
+  useEffect(() => { const syncProfile = () => setProfile(readProfile()); const syncNotifications = (event: Event) => setNotificationCount((event as CustomEvent<number>).detail); const clearNotifications = () => setNotificationCount(0); syncProfile(); window.addEventListener("anithink:profile-changed", syncProfile); window.addEventListener("anithink:notifications-changed", syncNotifications); window.addEventListener("anithink:notifications-read", clearNotifications); void fetch("/api/notifications").then((response) => response.json()).then((data) => { const dismissed: unknown = JSON.parse(window.localStorage.getItem("anithink:notifications-dismissed") ?? "[]"); const dismissedIds = new Set(Array.isArray(dismissed) ? dismissed : []); const items = [...data.news, ...data.ongoing].filter((item: { id: string }) => !dismissedIds.has(item.id)); const rawSeen = window.localStorage.getItem("anithink:notifications-seen"); const seen: unknown = JSON.parse(rawSeen ?? "[]"); if (rawSeen === null) { window.localStorage.setItem("anithink:notifications-seen", JSON.stringify(items.map((item: { id: string }) => item.id))); setNotificationCount(0); return; } const seenIds = new Set(Array.isArray(seen) ? seen : []); setNotificationCount(items.filter((item: { id: string }) => !seenIds.has(item.id)).length); }).catch(() => {}); return () => { window.removeEventListener("anithink:profile-changed", syncProfile); window.removeEventListener("anithink:notifications-changed", syncNotifications); window.removeEventListener("anithink:notifications-read", clearNotifications); }; }, []);
 
   return (
     <motion.aside
@@ -226,9 +226,9 @@ function ThemeSwitcher() {
                 active && "scale-110",
               )}
               style={{
-                backgroundColor: t.color,
+                backgroundColor: t.id === "custom" ? "rgb(var(--accent))" : t.color,
                 boxShadow: active
-                  ? `0 0 0 2px var(--bg-panel), 0 0 0 4px ${t.color}, 0 0 14px ${t.color}`
+                  ? `0 0 0 2px var(--bg-panel), 0 0 0 4px ${t.id === "custom" ? "rgb(var(--accent))" : t.color}, 0 0 14px ${t.id === "custom" ? "rgb(var(--accent))" : t.color}`
                   : `0 0 0 1px rgba(255,255,255,0.1)`,
               }}
             >

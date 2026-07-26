@@ -105,6 +105,8 @@
 
 @keyframes cyber-drift { from { transform: translate3d(0, 0, 0) scale(0.8); } to { transform: translate3d(14vw, -8vh, 0) scale(1.25); } }
 @keyframes cyber-particles { to { background-position: 70px -180px, -80px -250px; } }
+@keyframes toast-slide { 0% { opacity: 0; transform: translate(-50%, 28px) scale(.96); } 12%, 86% { opacity: 1; transform: translate(-50%, 0) scale(1); } 100% { opacity: 0; transform: translate(-50%, 20px) scale(.98); } }
+.animate-toast { animation: toast-slide 3.2s cubic-bezier(.2,.8,.2,1) both; }
 
 /* ============================================================
    Кастомный скроллбар
@@ -174,11 +176,17 @@
     @apply bg-surface/70 backdrop-blur-xl border border-border;
   }
 
-  .neon-text {
+.neon-text {
     color: rgb(var(--accent));
     text-shadow: 0 0 10px rgb(var(--accent-glow) / 0.65);
   }
 }
+
+.performance-mode *, .performance-mode *::before, .performance-mode *::after { animation: none !important; filter: none !important; box-shadow: none !important; backdrop-filter: none !important; }
+.compact-grid .grid.grid-cols-2 { gap: 0.6rem; }
+.compact-grid [class*="aspect-[2/3]"] { aspect-ratio: 0.72; }
+.Action { display: flex; width: 100%; align-items: center; gap: 0.5rem; border: 1px solid rgb(var(--border)); border-radius: 0.75rem; padding: 0.65rem 0.75rem; font-size: 0.875rem; font-weight: 600; color: rgb(var(--fg-muted)); transition: color .2s, border-color .2s; }
+.Action:hover { color: rgb(var(--accent)); border-color: rgb(var(--accent) / .6); }
 
 /* ============================================================
    Типографика HTML-контента статей (body_html из Shikimori).

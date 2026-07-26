@@ -216,13 +216,13 @@ function MobileThemeSwitcher() {
                 active ? "text-background" : "text-muted",
               )}
               style={{
-                backgroundColor: active ? t.color : "transparent",
+                backgroundColor: active ? (t.id === "custom" ? "rgb(var(--accent))" : t.color) : "transparent",
                 border: active ? "none" : "1px solid rgb(var(--border))",
               }}
             >
               <span
                 className="h-3 w-3 rounded-full"
-                style={{ backgroundColor: t.color }}
+                style={{ backgroundColor: t.id === "custom" ? "rgb(var(--accent))" : t.color }}
               />
               {t.label}
             </button>
