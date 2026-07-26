@@ -1,6 +1,6 @@
 "use client";
 
-import { MonitorPlay } from "lucide-react";
+import { AlertTriangle, MonitorPlay } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 
 interface KinoBoxPlayerProps { shikimoriId: string | number; title: string; }
@@ -8,15 +8,17 @@ declare global { interface Window { Kinobox?: new (selector: string, options: un
 
 function KinoboxEmbed({ title }: { title: string }) {
   const id = `kinobox-${useId().replace(/:/g, "")}`;
+  const [unavailable, setUnavailable] = useState(false);
   useEffect(() => {
     let alive = true;
     const init = () => { if (alive && window.Kinobox) new window.Kinobox(`#${id}`, { search: { title } }).init(); };
     const ready = document.querySelector<HTMLScriptElement>('script[data-kinobox-sdk="true"]');
-    if (ready) { ready.addEventListener("load", init); init(); return () => { alive = false; ready.removeEventListener("load", init); }; }
-    const script = document.createElement("script"); script.src = "https://kinobox.tv/kinobox.min.js"; script.async = true; script.dataset.kinoboxSdk = "true"; script.onload = init; document.body.appendChild(script);
-    return () => { alive = false; script.onload = null; };
+    if (ready) { ready.addEventListener("load", init); ready.addEventListener("error", () => setUnavailable(true)); init(); return () => { alive = false; ready.removeEventListener("load", init); }; }
+    const script = document.createElement("script"); script.src = "https://kinobox.tv/kinobox.min.js"; script.async = true; script.dataset.kinoboxSdk = "true"; script.onload = init; script.onerror = () => setUnavailable(true); document.body.appendChild(script);
+    const timeout = window.setTimeout(() => { if (!window.Kinobox) setUnavailable(true); }, 7000);
+    return () => { alive = false; script.onload = null; window.clearTimeout(timeout); };
   }, [id, title]);
-  return <div id={id} className="h-full w-full [&_.kinobox__wrapper]:!h-full [&_.kinobox__wrapper]:!max-h-none" />;
+  return unavailable ? <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center"><span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-500/10 text-red-300"><AlertTriangle className="h-6 w-6" /></span><div><p className="font-semibold">KinoBox временно недоступен</p><p className="mt-1 max-w-sm text-xs text-muted">Сервис не отдаёт свой SDK. Переключитесь на Kodik — ваш сайт и данные при этом не затронуты.</p></div></div> : <div id={id} className="h-full w-full [&_.kinobox__wrapper]:!h-full [&_.kinobox__wrapper]:!max-h-none" />;
 }
 
 export function KinoBoxPlayer({ shikimoriId, title }: KinoBoxPlayerProps) {
