@@ -162,7 +162,6 @@ export function ProfileClient() {
           user_id: userData.user.id,
           nickname: profile.nickname,
           full_name: profile.nickname,
-          tag: profile.tag,
           avatar_url: profile.avatar || null,
         },
         { onConflict: "id" }
