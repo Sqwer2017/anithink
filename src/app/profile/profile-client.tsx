@@ -88,18 +88,26 @@ export function ProfileClient() {
         const { data } = await supabase.auth.getUser();
         setAuthUser(data.user);
 
-        // Если юзер авторизован — подтягиваем никнейм и тег из базы
+        // Если юзер авторизован — подтягиваем никнейм, имя, тег и аватар из базы
         if (data.user) {
           const { data: dbProfile } = await supabase
             .from("profiles")
-            .select("nickname, tag")
+            .select("nickname, full_name, tag, avatar_url")
             .eq("id", data.user.id)
             .single();
 
           if (dbProfile) {
+            const fetchedName =
+              dbProfile.nickname || dbProfile.full_name || data.user.email?.split("@")[0];
+
             setProfile((prev) =>
               prev
-                ? { ...prev, nickname: dbProfile.nickname || prev.nickname, tag: dbProfile.tag || prev.tag }
+                ? {
+                    ...prev,
+                    nickname: fetchedName || prev.nickname,
+                    tag: dbProfile.tag || prev.tag,
+                    avatar: dbProfile.avatar_url || prev.avatar,
+                  }
                 : prev
             );
           }
@@ -151,8 +159,8 @@ export function ProfileClient() {
       const { error } = await supabase.from("profiles").upsert(
         {
           id: userData.user.id,
-          user_id: userData.user.id,
           nickname: profile.nickname,
+          full_name: profile.nickname,
           tag: profile.tag,
           avatar_url: profile.avatar || null,
         },
