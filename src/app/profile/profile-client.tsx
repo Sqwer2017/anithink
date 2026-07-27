@@ -159,6 +159,7 @@ export function ProfileClient() {
       const { error } = await supabase.from("profiles").upsert(
         {
           id: userData.user.id,
+          user_id: userData.user.id,
           nickname: profile.nickname,
           full_name: profile.nickname,
           tag: profile.tag,
