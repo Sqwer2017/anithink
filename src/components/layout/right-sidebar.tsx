@@ -12,6 +12,7 @@ import {
 } from "@/components/providers/theme-provider";
 import { cn } from "@/lib/utils";
 import { readProfile, type LocalProfile } from "@/lib/local-profile";
+import { useSignOut } from "@/lib/use-sign-out";
 
 const COLLAPSED_WIDTH = 76;
 const EXPANDED_WIDTH = 264;
@@ -34,6 +35,7 @@ export function RightSidebar() {
   const [open, setOpen] = useState(false);
   const [profile, setProfile] = useState<LocalProfile | null>(null);
   const [notificationCount, setNotificationCount] = useState(0);
+  const signOut = useSignOut();
   useEffect(() => { const syncProfile = () => setProfile(readProfile()); const syncNotifications = (event: Event) => setNotificationCount((event as CustomEvent<number>).detail); const clearNotifications = () => setNotificationCount(0); syncProfile(); window.addEventListener("anithink:profile-changed", syncProfile); window.addEventListener("anithink:notifications-changed", syncNotifications); window.addEventListener("anithink:notifications-read", clearNotifications); void fetch("/api/notifications").then((response) => response.json()).then((data) => { const dismissed: unknown = JSON.parse(window.localStorage.getItem("anithink:notifications-dismissed") ?? "[]"); const dismissedIds = new Set(Array.isArray(dismissed) ? dismissed : []); const items = [...data.news, ...data.ongoing].filter((item: { id: string }) => !dismissedIds.has(item.id)); const rawSeen = window.localStorage.getItem("anithink:notifications-seen"); const seen: unknown = JSON.parse(rawSeen ?? "[]"); if (rawSeen === null) { window.localStorage.setItem("anithink:notifications-seen", JSON.stringify(items.map((item: { id: string }) => item.id))); setNotificationCount(0); return; } const seenIds = new Set(Array.isArray(seen) ? seen : []); setNotificationCount(items.filter((item: { id: string }) => !seenIds.has(item.id)).length); }).catch(() => {}); return () => { window.removeEventListener("anithink:profile-changed", syncProfile); window.removeEventListener("anithink:notifications-changed", syncNotifications); window.removeEventListener("anithink:notifications-read", clearNotifications); }; }, []);
 
   return (
@@ -114,7 +116,12 @@ export function RightSidebar() {
 
       {/* Выйти */}
       <div className="border-t border-border px-3 py-2">
-        <ProfileLink item={LOGOUT_NAV} expanded={open} danger />
+        <ProfileLink
+          item={LOGOUT_NAV}
+          expanded={open}
+          danger
+          onClick={signOut}
+        />
       </div>
     </motion.aside>
   );
@@ -145,24 +152,18 @@ function ProfileLink({
   expanded,
   danger = false,
   badge,
+  onClick,
 }: {
   item: (typeof PROFILE_NAV)[number];
   expanded: boolean;
   danger?: boolean;
   badge?: string;
+  onClick?: () => void;
 }) {
   const Icon = item.icon;
-  return (
-    <Link
-      href={item.href}
-      title={item.label}
-      className={cn(
-        "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-        danger
-          ? "text-red-400/80 hover:bg-red-500/10 hover:text-red-400"
-          : "text-muted hover:bg-surface-2/60 hover:text-foreground",
-      )}
-    >
+
+  const inner = (
+    <>
       <span className="relative shrink-0">
         <Icon className="h-[18px] w-[18px] transition-transform group-hover:scale-110" />
         {/* Бейдж в свёрнутом состоянии */}
@@ -196,6 +197,29 @@ function ProfileLink({
           </motion.span>
         )}
       </AnimatePresence>
+    </>
+  );
+
+  const className = cn(
+    "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+    danger
+      ? "text-red-400/80 hover:bg-red-500/10 hover:text-red-400"
+      : "text-muted hover:bg-surface-2/60 hover:text-foreground",
+  );
+
+  // Если передан onClick (кнопка «Выйти» и т.п.) — рендерим button,
+  // иначе — обычную навигационную ссылку.
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} title={item.label} className={className}>
+        {inner}
+      </button>
+    );
+  }
+
+  return (
+    <Link href={item.href} title={item.label} className={className}>
+      {inner}
     </Link>
   );
 }

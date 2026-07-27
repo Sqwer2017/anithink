@@ -49,9 +49,13 @@ export const PROFILE_NAV: ProfileNavItem[] = [
   { href: "/friends", label: "Друзья", icon: Users },
 ];
 
-/** Иконка выхода — отдельная, не входит в основной список */
+/**
+ * Пункт «Выйти» — отдельная, не входит в основной список.
+ * href не нужен: клик обрабатывается через useSignOut() (signOut Supabase + редирект),
+ * а не навигацией по маршруту. См. right-sidebar.tsx / mobile-nav.tsx.
+ */
 export const LOGOUT_NAV: NavItem = {
-  href: "/logout",
+  href: "",
   label: "Выйти",
   icon: LogOut,
 };

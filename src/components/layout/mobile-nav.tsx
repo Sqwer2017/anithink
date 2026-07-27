@@ -9,6 +9,7 @@ import { MAIN_NAV, PROFILE_NAV, LOGOUT_NAV } from "@/lib/navigation";
 import { ACCENT_THEMES, useTheme, type ThemeAccent } from "@/components/providers/theme-provider";
 import { cn } from "@/lib/utils";
 import { readProfile, type LocalProfile } from "@/lib/local-profile";
+import { useSignOut } from "@/lib/use-sign-out";
 
 /**
  * Мобильная навигация.
@@ -23,6 +24,7 @@ export function MobileNav() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [profile, setProfile] = useState<LocalProfile | null>(null);
+  const signOut = useSignOut();
 
   useEffect(() => {
     const syncProfile = () => setProfile(readProfile());
@@ -179,14 +181,17 @@ export function MobileNav() {
                 </div>
 
                 {/* Выйти */}
-                <Link
-                  href={LOGOUT_NAV.href}
-                  onClick={() => setOpen(false)}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    void signOut();
+                  }}
                   className="mt-2 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-red-400/80 hover:bg-red-500/10 hover:text-red-400"
                 >
                   <LOGOUT_NAV.icon className="h-5 w-5" />
                   {LOGOUT_NAV.label}
-                </Link>
+                </button>
               </div>
             </motion.div>
           </>

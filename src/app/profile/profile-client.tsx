@@ -176,8 +176,9 @@ export function ProfileClient() {
   const handleSignOut = async () => {
     if (supabase) {
       await supabase.auth.signOut();
-      toast("Вы вышли из аккаунта");
     }
+    toast("Вы вышли из аккаунта");
+    window.location.href = "/";
   };
 
   const upload = async (field: "avatar" | "cover", file?: File) => {

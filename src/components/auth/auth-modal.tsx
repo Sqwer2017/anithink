@@ -11,6 +11,17 @@ interface AuthModalProps {
   onSuccess?: () => void;
 }
 
+/**
+ * Базовый URL приложения для OAuth-редиректов.
+ * В проде берётся из NEXT_PUBLIC_SITE_URL, локально — из location.origin.
+ * Трейлинг-слеш срезаем, чтобы путь склеивался корректно.
+ */
+function getURL() {
+  const url =
+    process.env.NEXT_PUBLIC_SITE_URL ?? window.location.origin ?? "http://localhost:3000";
+  return url.replace(/\/+$/, "");
+}
+
 export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState("");
@@ -104,7 +115,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/profile`,
+          redirectTo: `${getURL()}/auth/callback`,
         },
       });
       if (error) throw error;
