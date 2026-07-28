@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  AlertTriangle,
   Camera,
   Clock3,
   ExternalLink,
@@ -8,15 +9,18 @@ import {
   Gamepad2,
   Heart,
   History,
+  Instagram,
   MessageCircle,
   Save,
   Send,
+  Settings2,
   Eye,
   EyeOff,
   ChevronDown,
   ChevronUp,
   LogIn,
   LogOut,
+  X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { readProfile, saveProfile, type LocalProfile } from "@/lib/local-profile";
@@ -28,6 +32,7 @@ import { uploadProfileMedia } from "@/lib/media-upload";
 import { toast } from "@/components/providers/toast-provider";
 import { supabase } from "@/lib/supabase";
 import { AuthModal } from "@/components/auth/auth-modal";
+import { useSignOut } from "@/lib/use-sign-out";
 
 function readIds(key: string) {
   try {
@@ -66,6 +71,9 @@ export function ProfileClient() {
   const [editingName, setEditingName] = useState(false);
   const [nicknameDraft, setNicknameDraft] = useState("");
   const [tagDraft, setTagDraft] = useState("");
+  const [socialEditOpen, setSocialEditOpen] = useState(false);
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
+  const signOut = useSignOut();
 
   useEffect(() => {
     const loadAnime = (ids: string[], set: (anime: Anime[]) => void) => {
@@ -96,7 +104,7 @@ export function ProfileClient() {
         if (data.user) {
           const { data: dbProfile } = await supabase
             .from("profiles")
-            .select("nickname, full_name, tag, avatar_url, cover_url")
+            .select("nickname, full_name, tag, avatar_url, cover_url, telegram, discord, steam, instagram, bio")
             .eq("id", data.user.id)
             .single();
 
@@ -104,17 +112,24 @@ export function ProfileClient() {
             const fetchedName =
               dbProfile.nickname || dbProfile.full_name || data.user.email?.split("@")[0];
 
-            setProfile((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    nickname: fetchedName || prev.nickname,
-                    tag: dbProfile.tag || prev.tag,
-                    avatar: dbProfile.avatar_url || prev.avatar,
-                    cover: dbProfile.cover_url || prev.cover,
-                  }
-                : prev
-            );
+            setProfile((prev) => {
+              if (!prev) return prev;
+              const next = {
+                ...prev,
+                nickname: fetchedName || prev.nickname,
+                tag: dbProfile.tag || prev.tag,
+                avatar: dbProfile.avatar_url || prev.avatar,
+                cover: dbProfile.cover_url || prev.cover,
+                telegram: dbProfile.telegram || prev.telegram,
+                discord: dbProfile.discord || prev.discord,
+                steam: dbProfile.steam || prev.steam,
+                instagram: dbProfile.instagram || prev.instagram,
+                bio: dbProfile.bio || prev.bio,
+              };
+              // Сохраняем в localStorage и диспатчим событие для сайдбаров
+              saveProfile(next);
+              return next;
+            });
           }
         }
       }
@@ -145,6 +160,12 @@ export function ProfileClient() {
   const handleSaveAll = async () => {
     persist(profile);
 
+    if (!authUser) {
+      toast("Для изменения профиля необходимо войти в аккаунт", true);
+      setIsAuthOpen(true);
+      return;
+    }
+
     if (!supabase) {
       toast("Профиль сохранён локально (Supabase недоступен)");
       return;
@@ -174,6 +195,7 @@ export function ProfileClient() {
           telegram: profile.telegram || null,
           discord: profile.discord || null,
           steam: profile.steam || null,
+          instagram: profile.instagram || null,
           favorites_privacy: profile.favoritesPrivacy,
           completed_privacy: profile.completedPrivacy,
           history_privacy: profile.historyPrivacy,
@@ -199,16 +221,19 @@ export function ProfileClient() {
     }
   };
 
-  const handleSignOut = async () => {
-    if (supabase) {
-      await supabase.auth.signOut();
-    }
-    toast("Вы вышли из аккаунта");
-    window.location.href = "/";
+  const handleSignOut = () => {
+    setConfirmSignOut(true);
   };
 
   const upload = async (field: "avatar" | "cover", file?: File) => {
     if (!file || !profile) return;
+
+    // Гостевой гейт: без авторизации — toast + модалка
+    if (!authUser) {
+      toast("Для изменения профиля необходимо войти в аккаунт", true);
+      setIsAuthOpen(true);
+      return;
+    }
 
     // 1. Мгновенный локальный превью (data URL)
     const dataUrl = await compressImage(file).catch(() => null);
@@ -276,6 +301,22 @@ export function ProfileClient() {
 
   return (
     <>
+      {/* Гостевой баннер */}
+      {!authUser && (
+        <div className="mb-4 flex items-center gap-3 rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-3 text-xs text-yellow-400">
+          <AlertTriangle className="h-5 w-5 shrink-0" />
+          <span className="flex-1">
+            ⚠️ Ваши данные хранятся локально в браузере! Войдите в аккаунт, чтобы не потерять их при очистке кэша.
+          </span>
+          <button
+            type="button"
+            onClick={() => setIsAuthOpen(true)}
+            className="shrink-0 rounded-lg bg-yellow-500/20 px-3 py-1.5 font-bold hover:bg-yellow-500/30"
+          >
+            Войти
+          </button>
+        </div>
+      )}
       <section className="overflow-hidden rounded-3xl border border-border/70 bg-card shadow-cyber">
         <label className="relative block h-44 cursor-pointer overflow-hidden bg-[radial-gradient(circle_at_20%_30%,rgb(var(--accent)/0.45),transparent_25%),linear-gradient(120deg,rgb(var(--bg-panel-2)),rgb(var(--bg-main)))]">
           <input
@@ -359,19 +400,6 @@ export function ProfileClient() {
               )}
             </div>
             <div className="flex flex-col items-end gap-2">
-              {!editingName && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setNicknameDraft(profile.nickname);
-                    setTagDraft(profile.tag);
-                    setEditingName(true);
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-surface px-3 py-1.5 text-xs font-bold text-muted transition hover:border-accent/40 hover:text-accent hover:shadow-neon-sm"
-                >
-                  ✏️ Изменить имя
-                </button>
-              )}
               <div className="hidden sm:block">
                 <CharacterEditor profile={profile} onChange={updateCharacter} />
               </div>
@@ -390,27 +418,57 @@ export function ProfileClient() {
             placeholder="BIO (расскажите о себе)"
           />
 
-          {/* Соцсети */}
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            <Social
+          {/* Соцсети — круглые иконки */}
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <SocialIcon
               icon={Send}
-              value={profile.telegram}
-              placeholder="Telegram link"
-              onChange={(telegram) => setProfile({ ...profile, telegram })}
+              href={profile.telegram}
+              label="Telegram"
             />
-            <Social
+            <SocialIcon
               icon={MessageCircle}
-              value={profile.discord}
-              placeholder="Discord link"
-              onChange={(discord) => setProfile({ ...profile, discord })}
+              href={profile.discord}
+              label="Discord"
             />
-            <Social
+            <SocialIcon
               icon={Gamepad2}
-              value={profile.steam}
-              placeholder="Steam link"
-              onChange={(steam) => setProfile({ ...profile, steam })}
+              href={profile.steam}
+              label="Steam"
             />
+            <SocialIcon
+              icon={Instagram}
+              href={profile.instagram}
+              label="Instagram"
+            />
+            <button
+              type="button"
+              onClick={() => setSocialEditOpen(true)}
+              className="ml-1 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-surface text-muted transition hover:border-accent/40 hover:text-accent"
+              title="Изменить соцсети"
+            >
+              <Settings2 className="h-4 w-4" />
+            </button>
           </div>
+
+          {/* Кнопка ✏️ Изменить имя — нижний правый угол */}
+          {!editingName && (
+            <button
+              type="button"
+              onClick={() => {
+                if (!authUser) {
+                  toast("Для изменения профиля необходимо войти в аккаунт", true);
+                  setIsAuthOpen(true);
+                  return;
+                }
+                setNicknameDraft(profile.nickname);
+                setTagDraft(profile.tag);
+                setEditingName(true);
+              }}
+              className="absolute bottom-4 right-4 sm:bottom-6 sm:right-6 rounded-xl border border-border bg-surface px-3 py-1.5 text-xs font-bold text-muted transition hover:border-accent/40 hover:text-accent hover:shadow-neon-sm"
+            >
+              ✏️ Изменить имя
+            </button>
+          )}
 
           {/* Кнопки действий */}
           <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -537,6 +595,63 @@ export function ProfileClient() {
 
       {/* Модалка входа */}
       <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
+
+      {/* Модалка редактирования соцсетей */}
+      <SocialEditModal
+        open={socialEditOpen}
+        profile={profile}
+        onSave={(updated) => {
+          const next = { ...profile, ...updated };
+          persist(next);
+          // Если авторизован — сохраняем в Supabase
+          if (supabase && authUser) {
+            supabase.from("profiles").upsert(
+              {
+                id: (authUser as { id: string }).id,
+                telegram: next.telegram || null,
+                discord: next.discord || null,
+                steam: next.steam || null,
+                instagram: next.instagram || null,
+              },
+              { onConflict: "id" },
+            ).then(({ error }) => {
+              if (error) console.error("social save error:", error);
+            });
+          }
+        }}
+        onClose={() => setSocialEditOpen(false)}
+      />
+
+      {/* Модалка подтверждения выхода */}
+      {confirmSignOut && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="relative w-full max-w-sm rounded-3xl border border-border bg-card p-6 shadow-cyber animate-in zoom-in-95 duration-200">
+            <h2 className="text-xl font-extrabold font-display mb-2">Выход из аккаунта</h2>
+            <p className="text-sm text-muted">
+              Вы уверены, что хотите выйти? Несохраненные локальные данные могут быть сброшены.
+            </p>
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmSignOut(false);
+                  void signOut();
+                }}
+                className="flex-1 rounded-xl bg-red-500 py-3 text-sm font-bold text-white hover:opacity-90"
+              >
+                Да, выйти
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmSignOut(false)}
+                className="flex-1 rounded-xl border border-border bg-surface py-3 text-sm font-bold text-muted hover:text-foreground"
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -587,36 +702,145 @@ function Stat({ icon: Icon, label, value }: { icon: typeof Clock3; label: string
   );
 }
 
-function Social({
+/* ==================== Круглая иконка соцсети ==================== */
+
+const SOCIAL_LINKS: { icon: typeof Send; field: keyof LocalProfile; label: string }[] = [
+  { icon: Send, field: "telegram", label: "Telegram" },
+  { icon: MessageCircle, field: "discord", label: "Discord" },
+  { icon: Gamepad2, field: "steam", label: "Steam" },
+  { icon: Instagram, field: "instagram", label: "Instagram" },
+];
+
+function SocialIcon({
   icon: Icon,
-  value,
-  placeholder,
-  onChange,
+  href,
+  label,
 }: {
   icon: typeof Send;
+  href: string;
+  label: string;
+}) {
+  const hasLink = Boolean(href);
+  return (
+    <a
+      href={hasLink ? (href.startsWith("http") ? href : `https://${href}`) : undefined}
+      target={hasLink ? "_blank" : undefined}
+      rel={hasLink ? "noreferrer" : undefined}
+      title={label}
+      className={`flex h-10 w-10 items-center justify-center rounded-full border transition ${
+        hasLink
+          ? "border-border bg-surface text-muted hover:border-accent/40 hover:text-accent hover:shadow-neon-sm"
+          : "border-border/40 bg-surface/50 text-muted/30 line-through opacity-40 cursor-default"
+      }`}
+    >
+      <Icon className="h-4 w-4" />
+    </a>
+  );
+}
+
+/* ==================== Модалка редактирования соцсетей ==================== */
+
+interface SocialEditModalProps {
+  open: boolean;
+  profile: LocalProfile;
+  onSave: (updated: Partial<LocalProfile>) => void;
+  onClose: () => void;
+}
+
+function SocialEditModal({ open, profile, onSave, onClose }: SocialEditModalProps) {
+  const [draft, setDraft] = useState({ telegram: "", discord: "", steam: "", instagram: "" });
+
+  useEffect(() => {
+    if (open) {
+      setDraft({
+        telegram: profile.telegram || "",
+        discord: profile.discord || "",
+        steam: profile.steam || "",
+        instagram: profile.instagram || "",
+      });
+    }
+  }, [open, profile]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+      <div className="relative w-full max-w-md rounded-3xl border border-border bg-card p-6 shadow-cyber animate-in zoom-in-95 duration-200">
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-4 top-4 rounded-full p-2 text-muted hover:bg-surface hover:text-foreground transition"
+        >
+          <X className="h-5 w-5" />
+        </button>
+
+        <h2 className="text-2xl font-extrabold font-display mb-5">Редактировать соцсети</h2>
+
+        <div className="space-y-3">
+          <SocialInput
+            label="Telegram"
+            value={draft.telegram}
+            onChange={(v) => setDraft((d) => ({ ...d, telegram: v }))}
+          />
+          <SocialInput
+            label="Discord"
+            value={draft.discord}
+            onChange={(v) => setDraft((d) => ({ ...d, discord: v }))}
+          />
+          <SocialInput
+            label="Steam"
+            value={draft.steam}
+            onChange={(v) => setDraft((d) => ({ ...d, steam: v }))}
+          />
+          <SocialInput
+            label="Instagram"
+            value={draft.instagram}
+            onChange={(v) => setDraft((d) => ({ ...d, instagram: v }))}
+          />
+        </div>
+
+        <div className="mt-6 flex gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              onSave(draft);
+              onClose();
+            }}
+            className="flex-1 rounded-xl bg-accent py-3 text-sm font-bold text-background hover:opacity-90"
+          >
+            Сохранить
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 rounded-xl border border-border bg-surface py-3 text-sm font-bold text-muted hover:text-foreground"
+          >
+            Закрыть
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SocialInput({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
   value: string;
-  placeholder: string;
-  onChange: (value: string) => void;
+  onChange: (v: string) => void;
 }) {
   return (
     <label className="flex items-center gap-2 rounded-xl border border-border bg-surface px-3 text-muted">
-      <Icon className="h-4 w-4 text-accent" />
+      <span className="text-xs font-bold uppercase tracking-wide w-20 shrink-0">{label}</span>
       <input
         value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={`Ссылка на ${label}`}
         className="min-w-0 flex-1 bg-transparent py-3 text-xs outline-none"
       />
-      {value && (
-        <a
-          href={value.startsWith("http") ? value : `https://${value}`}
-          target="_blank"
-          rel="noreferrer"
-          className="text-accent"
-        >
-          ↗
-        </a>
-      )}
     </label>
   );
 }

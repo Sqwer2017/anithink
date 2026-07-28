@@ -1,7 +1,5 @@
-"use client";
+import FriendsClient from "./friends-client";
 
-import { Users } from "lucide-react";
-import { useEffect, useState } from "react";
-
-type Contact = { id: string; nickname: string; tag: string; avatar?: string | null };
-export default function FriendsPage() { const [contacts, setContacts] = useState<Contact[]>([]); useEffect(() => { try { const value = JSON.parse(localStorage.getItem("anithink:chat-contacts") ?? "[]"); if (Array.isArray(value)) setContacts(value); } catch {} }, []); return <main className="mx-auto w-full max-w-[1100px] px-4 py-6 md:px-6"><section className="rounded-3xl border border-border bg-card p-5 shadow-cyber"><p className="text-xs font-bold uppercase tracking-[0.18em] text-accent">Social</p><h1 className="mt-1 flex items-center gap-2 font-display text-3xl font-extrabold"><Users className="h-7 w-7 text-accent" />Друзья</h1><div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{contacts.length ? contacts.map((contact) => <article key={contact.id} className="flex items-center gap-3 rounded-2xl border border-border bg-surface p-4"><span className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-accent-gradient font-bold text-background ring-1 ring-accent">{contact.avatar ? <img src={contact.avatar} alt="" className="h-full w-full object-cover" /> : contact.nickname.slice(0, 2).toUpperCase()}</span><span className="min-w-0"><b className="block truncate">{contact.nickname}</b><span className="text-sm text-accent">@{contact.tag}</span></span></article>) : <p className="col-span-full rounded-2xl border border-dashed border-border p-10 text-center text-sm text-muted">Пока нет добавленных друзей. Найдите их по тегу на странице чата.</p>}</div></section></main>; }
+export default function FriendsPage() {
+  return <FriendsClient />;
+}

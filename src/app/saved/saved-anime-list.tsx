@@ -130,39 +130,51 @@ export function SavedAnimeList() {
     );
   }
 
+  const DISPLAY_LIMIT = 48;
+  const displayed = anime.slice(0, DISPLAY_LIMIT);
+
   return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
-      {anime.map((item, index) => (
-        <div key={item.id} className="group rounded-2xl border border-transparent transition-colors hover:border-border">
-          <AnimeCard anime={item} index={index} />
-          <div className="mt-2 flex flex-wrap gap-1.5 px-1 pb-1">
-            {item.isFavorite && (
-              <button
-                type="button"
-                onClick={() => removeFromList(String(item.id), FAVORITES_STORAGE_KEY)}
-                className="inline-flex items-center gap-1 rounded-md bg-accent/10 px-2 py-1 text-[11px] font-semibold text-accent transition-colors hover:bg-red-500/15 hover:text-red-300"
-                aria-label="Убрать из избранного"
-              >
-                <Heart className="h-3 w-3 fill-current" />
-                Избранное
-                <Trash2 className="h-3 w-3" />
-              </button>
-            )}
-            {item.isWatchLater && (
-              <button
-                type="button"
-                onClick={() => removeFromList(String(item.id), WATCH_LATER_STORAGE_KEY)}
-                className="inline-flex items-center gap-1 rounded-md bg-surface-2 px-2 py-1 text-[11px] font-semibold text-muted transition-colors hover:bg-red-500/15 hover:text-red-300"
-                aria-label="Убрать из плейлиста «Буду смотреть»"
-              >
-                <Bookmark className="h-3 w-3 fill-current" />
-                Буду смотреть
-                <Trash2 className="h-3 w-3" />
-              </button>
-            )}
+    <>
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
+        {displayed.map((item, index) => (
+          <div key={item.id} className="group rounded-2xl border border-transparent transition-colors hover:border-border">
+            <AnimeCard anime={item} index={index} />
+            <div className="mt-2 flex flex-wrap gap-1.5 px-1 pb-1">
+              {item.isFavorite && (
+                <button
+                  type="button"
+                  onClick={() => removeFromList(String(item.id), FAVORITES_STORAGE_KEY)}
+                  className="inline-flex items-center gap-1 rounded-md bg-accent/10 px-2 py-1 text-[11px] font-semibold text-accent transition-colors hover:bg-red-500/15 hover:text-red-300"
+                  aria-label="Убрать из избранного"
+                >
+                  <Heart className="h-3 w-3 fill-current" />
+                  Избранное
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              )}
+              {item.isWatchLater && (
+                <button
+                  type="button"
+                  onClick={() => removeFromList(String(item.id), WATCH_LATER_STORAGE_KEY)}
+                  className="inline-flex items-center gap-1 rounded-md bg-surface-2 px-2 py-1 text-[11px] font-semibold text-muted transition-colors hover:bg-red-500/15 hover:text-red-300"
+                  aria-label="Убрать из плейлиста «Буду смотреть»"
+                >
+                  <Bookmark className="h-3 w-3 fill-current" />
+                  Буду смотреть
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              )}
+            </div>
           </div>
+        ))}
+      </div>
+      {anime.length > DISPLAY_LIMIT && (
+        <div className="mt-6 flex justify-center">
+          <span className="rounded-xl border border-border bg-surface px-5 py-2.5 text-xs font-bold text-muted">
+            Показано {DISPLAY_LIMIT} из {anime.length}
+          </span>
         </div>
-      ))}
-    </div>
+      )}
+    </>
   );
 }

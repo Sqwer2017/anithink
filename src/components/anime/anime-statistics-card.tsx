@@ -94,7 +94,7 @@ export function AnimeStatisticsCard({
   ];
 
   return (
-    <section className="mt-5 max-w-[1320px] rounded-2xl border border-border/60 bg-card p-4 shadow-panel md:p-5">
+    <section className="mt-5 max-w-[1300px] rounded-2xl border border-border/60 bg-card p-4 shadow-panel md:p-5">
       <h2 className="font-display text-lg font-bold">Статистика аниме</h2>
       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {statistics.map(({ icon: Icon, label, value }) => (

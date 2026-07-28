@@ -2,7 +2,7 @@
 
 import { Heart, ListPlus, Star } from "lucide-react";
 import { useEffect, useState } from "react";
-import { KinoBoxPlayer } from "@/components/player/kinobox-player";
+import  KinoBoxPlayer  from "@/components/player/kinobox-player";
 import { PlaylistDialog } from "@/components/anime/playlist-dialog";
 import { WATCH_STATUS_STORAGE_KEY } from "@/lib/local-playlists";
 import {
@@ -157,7 +157,7 @@ export function AnimeWatchCard({ shikimoriId, title, score }: AnimeWatchCardProp
   };
 
   return (
-    <section className="max-w-[1320px] rounded-2xl border border-border/60 bg-card p-4 shadow-cyber md:p-5">
+    <section className="max-w-[1300px] rounded-2xl border border-border/60 bg-card p-4 shadow-cyber md:p-5">
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_270px]">
         <KinoBoxPlayer shikimoriId={shikimoriId} title={title} />
 

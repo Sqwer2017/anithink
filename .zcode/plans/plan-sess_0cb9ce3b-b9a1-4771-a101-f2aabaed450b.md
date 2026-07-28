@@ -1,94 +1,70 @@
-# Plan: Profile media + public profiles + privacy + player fixes
+## Plan: 7 fixes
 
-## Phase 0 — SQL migration (new file, you run it in Supabase dashboard)
-File: `supabase/migrations/2026_07_profile_friends_user_anime.sql`
+### 1. Плеер Kodik — увеличить (30px сверху, 25 снизу, 20 по бокам)
+**Файл:** `src/components/player/kinobox-player.tsx`
+- Родительский контейнер плеера: добавить `p-0` (уже есть), изменить `aspect-video` на кастомное соотношение или добавить negative margins.
+- **Решение:** Обернуть iframe в дополнительный `div` с `scale-110` (zoom 110%) или использовать `transform: scale(1.1)` и обрезать через `overflow-hidden`.
+- Проще: установить iframe `h-[calc(100%+55px)] w-[calc(100%+40px)] -top-[30px] -left-[20px]` — добавляет 30px сверху, 25 снизу, 20 по бокам. **Обновлённые классы:** `absolute -top-[30px] -left-[20px] h-[calc(100%+55px)] w-[calc(100%+40px)] border-0`.
 
-Since the repo has zero SQL, I'll write a self-contained migration matching your confirmed choices (separate columns for socials). I'll **append** columns / create tables idempotently. You run it once in the SQL editor.
+**Kinobox:** Скрипт не работает (оба URL 404/недоступны). Текущий код с 5s таймаутом корректно показывает заглушку. Ничего не меняю в Kinobox — он не чинится.
 
-**`profiles` — add columns:**
-- `cover_url text`, `bio text`, `telegram text`, `discord text`, `steam text`
-- `favorites_privacy profile_privacy NOT NULL DEFAULT 'public'`
-- `completed_privacy profile_privacy NOT NULL DEFAULT 'public'`
-- `history_privacy profile_privacy NOT NULL DEFAULT 'public'`
-- New enum `profile_privacy AS ENUM ('public','friends','close_friends','private')`
+### 2. Синхронизация профиля — подтягивать соцсети из БД при входе
+**Файл:** `src/app/profile/profile-client.tsx`
+- В `sync()` функции (useEffect), после `supabase.auth.getUser()`, расширить выборку с БД.
+- Сейчас загружается: `nickname, full_name, tag, avatar_url, cover_url`.
+- **Расширить до:** `nickname, full_name, tag, avatar_url, cover_url, telegram, discord, steam, instagram, bio`.
+- Применить загруженные данные к `profile` state: обновлять `telegram`, `discord`, `steam`, `instagram`, `bio` из БД.
+- Вызов `saveProfile(next)` после обновления — чтобы localStorage тоже синхронизировался.
 
-**`friendships` table** (directed, dual-row-on-accept — cleanest for asymmetric close-friend):
-```
-id uuid pk, user_id uuid, friend_id uuid, 
-status friendship_status ('pending','accepted'),
-is_close_friend bool default false,   -- "user_id marks friend_id as close"
-created_at timestamptz default now(),
-unique(user_id, friend_id), check(user_id <> friend_id)
-```
-+ RLS: owner (user_id = auth.uid()) can insert/update/delete; both parties' rows readable by either user.
+### 3. Боковое меню — обновление аватара/ника после входа
+**Файлы:** `src/components/layout/right-sidebar.tsx` + `src/components/layout/mobile-nav.tsx`
+- Оба компонента уже слушают `anithink:profile-changed` event, который диспатчится в `saveProfile()`.
+- **Проблема:** `saveProfile()` диспатчит event ТОЛЬКО когда вызван. При логине через Google (OAuth callback) `saveProfile()` не вызывается — profile данные приходят из `supabase.auth.getUser()` в `sync()` profile-client, но `saveProfile()` там не вызывается.
+- **Решение:** В `profile-client.tsx` `sync()` — после применения данных из БД к `profile` state, вызвать `saveProfile(updatedProfile)`. Это диспатчнет `anithink:profile-changed` и все слушатели (sidebar, m-nav) обновятся.
 
-**`user_anime` table** (unifies favorites + watch-status + history per the localStorage audit):
-```
-user_id uuid, anime_id text, 
-is_favorite bool default false,
-watch_status watch_status_type NULL ('watching','completed','planned','dropped'),
-in_history bool default false,
-rating smallint NULL,
-updated_at timestamptz default now(),
-primary key (user_id, anime_id)
-```
-+ RLS: writes only where `user_id = auth.uid()`; reads public (privacy enforced in app code since it's join-driven with profiles).
+### 4. Друзья — подтягивать из чат-контактов + поиск по тегу
+**Файл:** `src/app/friends/friends-client.tsx`
+- **Гибрид:** Показывать друзей из `friendships` (Supabase) **И** из `anithink:chat-contacts` (localStorage).
+- Загружать контакты из localStorage: `JSON.parse(localStorage.getItem("anithink:chat-contacts") ?? "[]")`.
+- Для каждого контакта (if it has `id`) — запрашивать профиль из `profiles` через Supabase, чтобы получить `cover_url` и др. Если контакт не имеет id (старый формат или номер телефона) — пропускать.
+- Мержить списки, убирать дубли по id.
+- **Поиск по тегу:** Добавить `<input>` вверху страницы друзей с `useState<searchTag>`. Фильтровать отображаемый список друзей по `friend.tag.includes(searchTag)`.
+- Кнопка «Найти пользователя» рядом с поиском — ссылка на `/user/{searchTag}`.
 
----
+### 5. Лимиты карточек + «Показать все» + перелинковка
+**Файлы:** `profile-client.tsx`, `history-list.tsx`, `saved-anime-list.tsx`
 
-## Phase 1 — Own profile (`ProfileClient.tsx`) + new lib
+- **profile-client:** Блоки «Недавние» / «Просмотрено» / «Любимые» — уже есть `slice(0,6)` и кнопка «Показать всё». **Ничего не менять.**
+- **history-list.tsx:** Добавить `slice(0, 24)`. Если >24 — добавить кнопку «Перейти в полный список» (Link к `/history`).
+- **saved-anime-list.tsx:** Добавить `slice(0, 48)`. Если >48 — кнопка «Перейти в полный список» (Link к `/saved`). На странице `/saved` — показать всё без лимита (уже 50 через API, этого достаточно).
 
-**`src/lib/user-anime.ts`** (new) — central sync layer (replaces scattered inline writes). Exposes:
-- `syncFavoriteToUserAnime(animeId, isFav)`, `syncWatchStatusToUserAnime(animeId, status|null)`, `syncHistoryToUserAnime(animeId)`
-- Each: auth-gated (`getUser()`), null-safe on `supabase`, `upsert({…}, { onConflict: 'user_id,anime_id' })` (or delete when removed), then `window.dispatchEvent(new CustomEvent('anithink:user-anime-changed'))`. Mirrors the existing `handleSaveAll` auth-gate pattern.
+### 6. Безопасность: гостевой баннер + модалка подтверждения выхода
+**Файлы:** `profile-client.tsx`, `use-sign-out.ts`
 
-**`src/lib/media-upload.ts`** (new) — `uploadProfileMedia(file, field): Promise<string>`: `compressImage` → `supabase.storage.from('media').upload(path, blob)` (path `avatars|covers/<userId>-<rand>.jpg`, `upsert:true`, `contentType:'image/jpeg'`) → return `getPublicUrl()`.
+- **Гостевой баннер** (profile-client.tsx): Если `!authUser`, показывать жёлтую плашку `.rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-3 text-xs text-yellow-400` с иконкой AlertTriangle и текстом «⚠️ Ваши данные хранятся локально в браузере! Войдите в аккаунт, чтобы не потерять их при очистке кэша.» + кнопка «Войти».
+- **Модалка подтверждения выхода:** Создать `ConfirmSignOutModal` — анимированный overlay + backdrop, заголовок «Выход из аккаунта», текст «Вы уверены, что хотите выйти? Несохраненные локальные данные могут быть сброшены.», кнопки «Отмена» и «Да, выйти».
+- В `use-sign-out.ts` — вместо прямого выхода, открыть модалку. Нужен стейт `showSignOutConfirm` в компонентах.
+- В `profile-client.tsx` и навигации (right-sidebar, mobile-nav) — при клике на «Выйти» открывать модалку вместо прямого вызова.
 
-**Wire sync into existing write points** (minimal, one line each after localStorage write):
-- `anime-watch-card.tsx` `toggleListItem` (favorites) + `setStatus`
-- `saved-anime-list.tsx` `removeFromList`
-- `anime-history-tracker.tsx` effect
+### 7. Плейлисты: лимит 10, cover необязательный, генерация заглушки
+**Файлы:** `local-playlists.ts`, `playlist-dialog.tsx`, `playlists-client.tsx`
 
-**`ProfileClient.tsx` edits:**
-- `upload()`: after compress (keep local data-URL preview), call `uploadProfileMedia` → set profile field to the **public URL** (avatar/cover).
-- Add **editable nickname + tag inputs** (currently read-only `<h1>`/`<p>` at lines 250–251) — inline-edit fields.
-- Add **3 privacy `<select>`** (favorites/completed/history) with labels «Видят все / Только друзья / Только избранные друзья / Никто».
-- `handleSaveAll` upsert: extend payload with `cover_url, bio, telegram, discord, steam, favorites_privacy, completed_privacy, history_privacy, full_name`. On `error.code === '23505'` → `toast("Этот тег уже занят, попробуйте другой", true)`.
+- **Лимит 10:** В `createPlaylist()` проверять `if (playlists.length >= 10) { toast("Максимум 10 плейлистов", true); return; }`.
+- **Cover необязательный:** Уже необязательный — просто не показывать картинку если `!cover`. Добавить **авто-генерацию заглушки**: вместо загруженной обложки показывать `div` с градиентом и названием плейлиста. Цвет градиента — из `accent` темы.
+- **Оптимизация cover:** При загрузке cover в `playlist-dialog.tsx` и `playlists-client.tsx` — использовать `compressImage(file, 800)` из `local-media.ts` (сжать до 800px по длинной стороне, JPEG 0.75).
 
----
-
-## Phase 2 — Public profile page `src/app/user/[tag]/`
-
-**`src/app/user/[tag]/page.tsx`** (new, server component) — extracts `params.tag`, passes to client component.
-
-**`src/app/user/[tag]/user-client.tsx`** (new, `"use client"`) — does all the work:
-- Load target profile: `.from('profiles').select('*').ilike('tag', tag).maybeSingle()` → 404/«не найден» state.
-- Load current viewer via `auth.getUser()`.
-- Load friendship: rows `(viewer,target)` and `(target,viewer)`. Derive: `none | outgoing_pending | incoming_pending | accepted`.
-- **Friendship buttons** (disabled for self / anon): «Добавить в друзья» (insert pending), «Заявка отправлена», «Принять» (set both rows accepted) / «В друзьях» / «Удалить из друзей».
-- **Close-friend toggle** (only if accepted): reflects `(viewer,target).is_close_friend`, toggles it.
-- Load target's `user_anime`, split into favorites / completed(`watch_status='completed'`) / history(`in_history`), fetch `Anime[]` via `/api/saved?ids=…`.
-- **Privacy gating helper** `canSee(privacy)`: `public`→true; `friends`→isAcceptedFriend; `close_friends`→ `(target,viewer).is_close_friend`; `private`→false. Owner sees all. Closed sections render the skeleton «Пользователь ограничил доступ к этому разделу».
-- Header: `cover_url` banner, `avatar_url`, nickname, `@tag`, bio, social icons (Telegram/Discord/Steam).
-- Reuse existing `AnimeCard`, `Block`, visual style from ProfileClient.
-
----
-
-## Phase 3 — Players (`src/components/player/kinobox-player.tsx`)
-
-**KinoBox (root-cause fix):** migrate to `next/script` with `strategy="afterInteractive"`:
-- Global type already exists in `src/types/global.d.ts` as `window.kbox(container, options)`.
-- `useEffect`: on `<Script onLoad>`, call `window.kbox('#id', { search: { shikimori: shikimoriId } })` (pass `shikimoriId` into `KinoboxEmbed`, not just title). Init **only after** load.
-- 5s timeout: if `!window.kbox` when it fires → `setUnavailable(true)` → show fallback (already-built «KinoBox временно недоступен, переключитесь на Kodik»).
-- Remove the stale `declare global { Kinobox }` block (conflicts with `global.d.ts`).
-
-**Kodik CSS:** adjust the iframe transform/offset — tighten `-left/-top`/height/width so the iframe fills the card without empty bands, slightly enlarge and raise it inside the `relative aspect-video` frame. Concrete values tuned in-place; small iteration acceptable.
+## Files to modify
+1. `src/components/player/kinobox-player.tsx` — Kodik увелечение
+2. `src/app/profile/profile-client.tsx` — sync profile data, guest banner, confirm modal
+3. `src/lib/use-sign-out.ts` — confirm modal logic
+4. `src/components/layout/right-sidebar.tsx` — sign out confirm modal
+5. `src/components/layout/mobile-nav.tsx` — sign out confirm modal
+6. `src/app/friends/friends-client.tsx` — chat-contacts hybrid, search
+7. `src/app/history/history-list.tsx` — limit 24 + "show all" link
+8. `src/app/saved/saved-anime-list.tsx` — limit 48 + "show all"
+9. `src/components/anime/playlist-dialog.tsx` — limit 10, cover compress
+10. `src/app/playlists/playlists-client.tsx` — limit 10, cover compress, auto-gradient
+11. `src/lib/local-playlists.ts` — no changes needed (limits in components)
 
 ## Verification
-- `npm run build` — type-check (esp. new global `window.kbox`, `user_anime` types, privacy enums as string unions in TS).
-- Manual: avatar/cover upload → public URL in `profiles`; tag duplicate → 23505 toast; `/user/<tag>` renders header + gated sections; friend add/accept/remove + close-friend toggle; KinoBox loads via `kbox` (fallback after 5s if SDK down); Kodik fills frame cleanly.
-
-## Out of scope
-- Ratings sync (`anithink:ratings`) — noted but not in this task.
-- Realtime on friendships/user_anime — polling on page load is sufficient for now.
-- Migrating to `@supabase/ssr` — staying on the existing localStorage-session architecture.
+- `npm run build`
