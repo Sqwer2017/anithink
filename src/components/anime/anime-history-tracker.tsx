@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { HISTORY_STORAGE_KEY } from "@/lib/local-playlists";
+import { syncHistoryToUserAnime } from "@/lib/user-anime";
 
 export function AnimeHistoryTracker({ animeId }: { animeId: string }) {
   useEffect(() => {
@@ -15,6 +16,9 @@ export function AnimeHistoryTracker({ animeId }: { animeId: string }) {
     } catch {
       window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify([animeId]));
     }
+
+    // Синхронизация отметки истории с Supabase.
+    void syncHistoryToUserAnime(animeId);
   }, [animeId]);
 
   return null;

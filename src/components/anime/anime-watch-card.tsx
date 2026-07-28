@@ -5,6 +5,11 @@ import { useEffect, useState } from "react";
 import { KinoBoxPlayer } from "@/components/player/kinobox-player";
 import { PlaylistDialog } from "@/components/anime/playlist-dialog";
 import { WATCH_STATUS_STORAGE_KEY } from "@/lib/local-playlists";
+import {
+  syncFavoriteToUserAnime,
+  syncWatchStatusToUserAnime,
+  type WatchStatus as SyncWatchStatus,
+} from "@/lib/user-anime";
 
 interface AnimeWatchCardProps {
   shikimoriId: string | number;
@@ -99,6 +104,11 @@ export function AnimeWatchCard({ shikimoriId, title, score }: AnimeWatchCardProp
 
     saveStringList(key, nextItems);
     setValue(!currentValue);
+
+    // Синхронизация избранного с Supabase (только для favorites, не watch-later).
+    if (key === FAVORITES_STORAGE_KEY) {
+      void syncFavoriteToUserAnime(animeId, !currentValue);
+    }
   };
 
   const setRating = (rating: number) => {
@@ -141,6 +151,9 @@ export function AnimeWatchCard({ shikimoriId, title, score }: AnimeWatchCardProp
         detail: { animeId, status: nextStatus },
       }),
     );
+
+    // Синхронизация статуса просмотра с Supabase.
+    void syncWatchStatusToUserAnime(animeId, nextStatus as SyncWatchStatus | null);
   };
 
   return (

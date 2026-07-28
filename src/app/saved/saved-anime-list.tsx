@@ -4,6 +4,7 @@ import { Bookmark, Heart, Loader2, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AnimeCard } from "@/components/anime/anime-card";
 import type { Anime } from "@/lib/api/shikimori";
+import { syncFavoriteToUserAnime } from "@/lib/user-anime";
 
 const FAVORITES_STORAGE_KEY = "anithink:favorites";
 const WATCH_LATER_STORAGE_KEY = "anithink:playlist:watch-later";
@@ -78,6 +79,11 @@ export function SavedAnimeList() {
       key,
       readStringList(key).filter((id) => id !== animeId),
     );
+
+    // Синхронизация удаления избранного с Supabase.
+    if (key === FAVORITES_STORAGE_KEY) {
+      void syncFavoriteToUserAnime(animeId, false);
+    }
 
     setAnime((current) =>
       current

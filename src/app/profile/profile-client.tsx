@@ -24,6 +24,7 @@ import { HISTORY_STORAGE_KEY, WATCH_STATUS_STORAGE_KEY } from "@/lib/local-playl
 import { AnimeCard } from "@/components/anime/anime-card";
 import type { Anime } from "@/lib/api/shikimori";
 import { compressImage } from "@/lib/local-media";
+import { uploadProfileMedia } from "@/lib/media-upload";
 import { toast } from "@/components/providers/toast-provider";
 import { supabase } from "@/lib/supabase";
 import { AuthModal } from "@/components/auth/auth-modal";
@@ -62,6 +63,9 @@ export function ProfileClient() {
   // Состояние авторизации
   const [authUser, setAuthUser] = useState<unknown>(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nicknameDraft, setNicknameDraft] = useState("");
+  const [tagDraft, setTagDraft] = useState("");
 
   useEffect(() => {
     const loadAnime = (ids: string[], set: (anime: Anime[]) => void) => {
@@ -88,11 +92,11 @@ export function ProfileClient() {
         const { data } = await supabase.auth.getUser();
         setAuthUser(data.user);
 
-        // Если юзер авторизован — подтягиваем никнейм, имя, тег и аватар из базы
+        // Если юзер авторизован — подтягиваем данные из базы
         if (data.user) {
           const { data: dbProfile } = await supabase
             .from("profiles")
-            .select("nickname, full_name, tag, avatar_url")
+            .select("nickname, full_name, tag, avatar_url, cover_url")
             .eq("id", data.user.id)
             .single();
 
@@ -107,6 +111,7 @@ export function ProfileClient() {
                     nickname: fetchedName || prev.nickname,
                     tag: dbProfile.tag || prev.tag,
                     avatar: dbProfile.avatar_url || prev.avatar,
+                    cover: dbProfile.cover_url || prev.cover,
                   }
                 : prev
             );
@@ -162,14 +167,27 @@ export function ProfileClient() {
           user_id: userData.user.id,
           nickname: profile.nickname,
           full_name: profile.nickname,
+          tag: profile.tag,
           avatar_url: profile.avatar || null,
+          cover_url: profile.cover || null,
+          bio: profile.bio || null,
+          telegram: profile.telegram || null,
+          discord: profile.discord || null,
+          steam: profile.steam || null,
+          favorites_privacy: profile.favoritesPrivacy,
+          completed_privacy: profile.completedPrivacy,
+          history_privacy: profile.historyPrivacy,
         },
         { onConflict: "id" }
       );
 
       if (error) {
         console.error("Ошибка сохранения в Supabase:", error);
-        toast(`Локально сохранено, но в БД ошибка: ${error.message}`, true);
+        if (error.code === "23505") {
+          toast("Этот тег уже занят, попробуйте другой", true);
+        } else {
+          toast(`Локально сохранено, но в БД ошибка: ${error.message}`, true);
+        }
       } else {
         toast("Профиль успешно сохранён!");
       }
@@ -190,12 +208,55 @@ export function ProfileClient() {
   };
 
   const upload = async (field: "avatar" | "cover", file?: File) => {
-    if (!file) return;
+    if (!file || !profile) return;
+
+    // 1. Мгновенный локальный превью (data URL)
+    const dataUrl = await compressImage(file).catch(() => null);
+    if (!dataUrl) {
+      toast("Не удалось обработать изображение", true);
+      return;
+    }
+
+    persist({ ...profile, [field]: dataUrl });
+    toast(field === "avatar" ? "Загрузка аватара…" : "Загрузка баннера…");
+
+    // 2. Если нет Supabase — остаётся локальным превью
+    if (!supabase) return;
+
     try {
-      persist({ ...profile, [field]: await compressImage(file) });
-      toast(field === "avatar" ? "Аватар сохранён" : "Баннер сохранён");
-    } catch {
-      toast("Не удалось сохранить изображение", true);
+      const { data: userData } = await supabase.auth.getUser();
+      const currentUserId = userData?.user?.id;
+
+      if (!currentUserId) return; // Гость: остаётся только локальное превью
+
+      // 3. Загрузка в Supabase Storage
+      const publicUrl = await uploadProfileMedia(file, field, currentUserId);
+      const dbField = field === "cover" ? "cover_url" : "avatar_url";
+
+      // 4. Запись ссылки в таблицу profiles
+      const { error: dbError } = await supabase
+        .from("profiles")
+        .update({ [dbField]: publicUrl })
+        .eq("id", currentUserId);
+
+      if (dbError) {
+        console.error("Ошибка обновления базы данных:", dbError);
+        toast("Изображение загружено, но не удалось привязать к БД", true);
+        return;
+      }
+
+      // 5. Финальное обновление state публичным URL
+      setProfile((prev) => {
+        if (!prev) return prev;
+        const next = { ...prev, [field]: publicUrl };
+        saveProfile(next);
+        return next;
+      });
+
+      toast(field === "avatar" ? "Аватар сохранён в облаке!" : "Баннер сохранён в облаке!");
+    } catch (err) {
+      console.error("media upload error:", err);
+      toast("Изображение сохранено локально, но произошла ошибка загрузки в облако", true);
     }
   };
 
@@ -246,12 +307,74 @@ export function ProfileClient() {
           </label>
 
           <div className="ml-32 flex items-start justify-between gap-3">
-            <div>
-              <h1 className="font-display text-3xl font-extrabold">{profile.nickname}</h1>
-              <p className="text-sm text-accent">@{profile.tag} · LVL 0</p>
+            <div className="min-w-0 flex-1">
+              {editingName ? (
+                <>
+                  <input
+                    value={nicknameDraft}
+                    onChange={(e) => setNicknameDraft(e.target.value.slice(0, 40))}
+                    className="w-full rounded-xl border-2 border-accent/60 bg-surface px-3 py-1.5 font-display text-3xl font-extrabold outline-none focus:border-accent"
+                    placeholder="Никнейм"
+                    autoFocus
+                  />
+                  <div className="mt-2 flex items-center gap-1 text-sm text-accent">
+                    <span>@</span>
+                    <input
+                      value={tagDraft}
+                      onChange={(e) =>
+                        setTagDraft(
+                          e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 30),
+                        )
+                      }
+                      className="rounded-lg border-2 border-accent/60 bg-surface px-2 py-1 outline-none focus:border-accent"
+                      placeholder="tag"
+                    />
+                    <span className="text-muted">· LVL 0</span>
+                  </div>
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProfile({ ...profile, nickname: nicknameDraft, tag: tagDraft });
+                        setEditingName(false);
+                      }}
+                      className="rounded-xl bg-accent px-4 py-1.5 text-xs font-bold text-background hover:opacity-90"
+                    >
+                      ✓ Сохранить
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingName(false)}
+                      className="rounded-xl border border-border bg-surface px-4 py-1.5 text-xs font-bold text-muted hover:text-foreground"
+                    >
+                      Отмена
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h1 className="font-display text-3xl font-extrabold">{profile.nickname}</h1>
+                  <p className="text-sm text-accent">@{profile.tag} · LVL 0</p>
+                </>
+              )}
             </div>
-            <div className="hidden sm:block">
-              <CharacterEditor profile={profile} onChange={updateCharacter} />
+            <div className="flex flex-col items-end gap-2">
+              {!editingName && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNicknameDraft(profile.nickname);
+                    setTagDraft(profile.tag);
+                    setEditingName(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-surface px-3 py-1.5 text-xs font-bold text-muted transition hover:border-accent/40 hover:text-accent hover:shadow-neon-sm"
+                >
+                  ✏️ Изменить имя
+                </button>
+              )}
+              <div className="hidden sm:block">
+                <CharacterEditor profile={profile} onChange={updateCharacter} />
+              </div>
             </div>
           </div>
 
@@ -289,7 +412,7 @@ export function ProfileClient() {
             />
           </div>
 
-          {/* Кнопки действий: Сохранение + Авторизация */}
+          {/* Кнопки действий */}
           <div className="mt-5 flex flex-wrap items-center gap-3">
             <button
               type="button"
