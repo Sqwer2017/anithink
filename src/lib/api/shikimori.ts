@@ -130,7 +130,9 @@ export function buildImageUrl(
 
   // Дальше восстанавливаем логику под два аргумента
   if (url.startsWith("http://") || url.startsWith("https://")) {
-    return url;
+    // shikimori.io падает (ERR_CONNECTION_RESET), а shikimori.one — рабочий CDN.
+    // Заменяем домен, чтобы постеры не бились.
+    return url.replace("shikimori.io", "shikimori.one");
   }
 
   if (url.startsWith("/")) {

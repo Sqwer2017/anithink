@@ -30,7 +30,9 @@ export function Header() {
       </div>
 
       {/* Горизонтальная навигация-пилюли (десктоп/планшет) */}
-      <nav className="scrollbar-none -mb-1 flex items-center gap-1 overflow-x-auto">
+      {/* py-1.5 / px-2 — чтобы неоновая тень активной кнопки НЕ резалась
+          (overflow-x-auto режет тень первой/последней кнопки по горизонтали) */}
+      <nav className="scrollbar-none flex items-center gap-1 overflow-x-auto py-1.5 px-2">
         {MAIN_NAV.map((item) => {
           const active =
             item.href === "/"

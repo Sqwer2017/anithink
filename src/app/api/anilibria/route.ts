@@ -1,76 +1,98 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const ANILIBERTY_API = "https://anilibria.top/api/v1";
+const ANILIBERTY_API = "https://aniliberty.top/api/v1";
+const BROWSER_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 /**
- * Серверный прокси для AniLiberty.
+ * Серверный прокси AniLiberty (зеркало Anilibria).
  *
- * Flow:
- *  1. Принимает `title` (русское/англ. название) или `alias`.
- *  2. Ищет release через /app/search/releases?query=
- *  3. Получает полный release (с эпизодами HLS) через /anime/releases/list?aliases=
- *  4. Форматирует эпизоды в { [номер]: { name, hlsUrl } }
+ * Логика:
+ *  1. Ищем релиз по названию (title/query) через /app/search/releases?query=
+ *     — это ЕДИНСТВЕННЫЙ рабочий поиск. /anime/releases?search= НЕ работает.
+ *  2. Берём alias и тянем полный release с эпизодами через /anime/releases/list?aliases=
+ *  3. Формируем { [номер]: { name, hlsUrl } } из hls_1080/720/480.
  *
- * Кэшируется на 30 минут (fresh) — HLS-ссылки AniLiberty живут долго.
+ * Важно:
+ *  - Без браузерного User-Agent API отдаёт пустой ответ. UA обязателен.
+ *  - Эпизоды доступны в /anime/releases/list (там поле episodes), а не в search-ответе.
  */
 export async function GET(request: NextRequest) {
-  const title = request.nextUrl.searchParams.get("title")?.trim();
-  const alias = request.nextUrl.searchParams.get("alias")?.trim();
+  const { searchParams } = new URL(request.url);
+  const alias = searchParams.get("alias")?.trim();
+  const query =
+    searchParams.get("title")?.trim() ||
+    searchParams.get("search")?.trim() ||
+    searchParams.get("q")?.trim();
 
-  if (!alias && !title) {
-    return NextResponse.json({ error: "Параметры title или alias обязательны" }, { status: 400 });
+  if (!alias && !query) {
+    return NextResponse.json(
+      { error: "Укажите параметр title или alias" },
+      { status: 400 },
+    );
   }
+
+  const headers = {
+    "User-Agent": BROWSER_UA,
+    Accept: "application/json",
+  };
 
   try {
     let releaseAlias = alias ? alias.toLowerCase() : "";
 
-    // 1. Ищем по названию, если alias не передан
-    if (!releaseAlias && title) {
-      const searchRes = await fetch(
-        `${ANILIBERTY_API}/app/search/releases?query=${encodeURIComponent(title)}&limit=5`,
-        {
-          headers: { Accept: "application/json" },
-          next: { revalidate: 1800 },
-        },
-      );
+    // ── 1. Поиск по названию ──
+    if (!releaseAlias && query) {
+      const searchUrl = `${ANILIBERTY_API}/app/search/releases?query=${encodeURIComponent(query)}&limit=10`;
+      const searchRes = await fetch(searchUrl, {
+        headers,
+        next: { revalidate: 300 },
+      });
+
       if (!searchRes.ok) {
-        return NextResponse.json({ error: `API status: ${searchRes.status}` }, { status: searchRes.status });
+        return NextResponse.json(
+          { error: `API search: ${searchRes.status}` },
+          { status: searchRes.status },
+        );
       }
 
-      const searchJson = await searchRes.json();
+      const searchJson = await searchRes.json().catch(() => null);
       const results = Array.isArray(searchJson) ? searchJson : searchJson?.data ?? [];
+
       if (results.length === 0) {
-        return NextResponse.json({ error: "Тайтл не найден в AniLiberty" }, { status: 404 });
+        return NextResponse.json({ error: "Тайтл не найден в AniLibria" }, { status: 404 });
       }
 
-      // Выбираем первый подходящий (по русскому/англ названию)
-      const normalized = title.toLowerCase();
+      // Точное совпадение по рус/англ названию, иначе — первый результат
+      const normalized = query.toLowerCase();
       const match =
-        results.find((r: any) =>
-          (r?.name?.main || "").toLowerCase() === normalized ||
-          (r?.name?.english || "").toLowerCase() === normalized,
+        results.find(
+          (r: any) =>
+            String(r?.name?.main || "").toLowerCase() === normalized ||
+            String(r?.name?.english || "").toLowerCase() === normalized,
         ) ?? results[0];
 
-      releaseAlias = (match?.alias || "").toLowerCase();
+      releaseAlias = String(match?.alias || "").toLowerCase();
       if (!releaseAlias) {
         return NextResponse.json({ error: "Не удалось определить alias" }, { status: 404 });
       }
     }
 
-    // 2. Получаем полный release с эпизодами
-    const releaseRes = await fetch(
-      `${ANILIBERTY_API}/anime/releases/list?aliases=${encodeURIComponent(releaseAlias)}&limit=1`,
-      {
-        headers: { Accept: "application/json" },
-        next: { revalidate: 1800 },
-      },
-    );
+    // ── 2. Полный релиз с эпизодами ──
+    const releaseUrl = `${ANILIBERTY_API}/anime/releases/list?aliases=${encodeURIComponent(releaseAlias)}&limit=1`;
+    const releaseRes = await fetch(releaseUrl, {
+      headers,
+      next: { revalidate: 300 },
+    });
+
     if (!releaseRes.ok) {
-      return NextResponse.json({ error: `API status: ${releaseRes.status}` }, { status: releaseRes.status });
+      return NextResponse.json(
+        { error: `API releases: ${releaseRes.status}` },
+        { status: releaseRes.status },
+      );
     }
 
-    const releaseJson = await releaseRes.json();
-    const release = (releaseJson?.data?.[0]) ?? releaseJson?.[0];
+    const releaseJson = await releaseRes.json().catch(() => null);
+    const release = releaseJson?.data?.[0] ?? (Array.isArray(releaseJson) ? releaseJson[0] : null);
 
     if (!release) {
       return NextResponse.json({ error: "Релиз не найден" }, { status: 404 });
@@ -81,28 +103,28 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "У данного тайтла нет серий" }, { status: 404 });
     }
 
-    // 3. Формируем список эпизодов с HLS
+    // ── 3. Формирование эпизодов ──
     const formattedEpisodes: Record<string, { name: string; hlsUrl: string }> = {};
+    const hasStream: Record<string, string[]> = {};
 
     episodesList.forEach((ep: any) => {
-      const hlsStream = typeof ep.hls_1080 === "string"
-        ? ep.hls_1080
-        : (typeof ep.hls_720 === "string"
-            ? ep.hls_720
-            : ep.hls_480);
-
       const epNumber = String(ep.ordinal ?? ep.sort_order ?? 1);
+      // Собираем доступные качества
+      const quals: string[] = [];
+      if (typeof ep.hls_1080 === "string") quals[0] = ep.hls_1080;
+      const hd = typeof ep.hls_720 === "string" && !quals[0] ? ep.hls_720 : null;
+      const sd = typeof ep.hls_480 === "string" && !quals[0] && !hd ? ep.hls_480 : null;
+      const chosen = quals[0] || hd || sd;
 
-      if (hlsStream) {
-        const fullHlsUrl = hlsStream.startsWith("http")
-          ? hlsStream
-          : `https://anilibria.top${hlsStream}`;
-
-        // Грузим все три качества для quality-меню, если они есть
+      if (chosen) {
+        const fullUrl = chosen.startsWith("http")
+          ? chosen
+          : `https://anilibria.top${chosen}`;
         formattedEpisodes[epNumber] = {
-          name: ep.name_english || `Серия ${epNumber}`,
-          hlsUrl: fullHlsUrl,
+          name: ep.name_english || ep.name || `Серия ${epNumber}`,
+          hlsUrl: fullUrl,
         };
+        hasStream[epNumber] = [fullUrl];
       }
     });
 
@@ -116,6 +138,9 @@ export async function GET(request: NextRequest) {
       episodes: formattedEpisodes,
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err?.message || "Server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: err?.message || "Ошибка сервера" },
+      { status: 500 },
+    );
   }
 }

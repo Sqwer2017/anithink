@@ -38,12 +38,14 @@ const config: Config = {
         "2xl": "1.5rem",
       },
       boxShadow: {
-        neon: "0 0 20px rgb(var(--accent-glow) / 0.45), 0 0 4px rgb(var(--accent-glow) / 0.6)",
+        // Компактные неоновые тени: меньше blur, чтобы не обрезались overflow-hidden
+        // и выглядели мягким равномерным свечением (0 0 12-15px).
+        neon: "0 0 12px rgb(var(--accent-glow) / 0.5), 0 0 3px rgb(var(--accent-glow) / 0.6)",
         "neon-sm":
-          "0 0 12px rgb(var(--accent-glow) / 0.35), inset 0 0 0 1px rgb(var(--accent) / 0.4)",
+          "0 0 9px rgb(var(--accent-glow) / 0.4), inset 0 0 0 1px rgb(var(--accent) / 0.4)",
         panel: "0 8px 40px rgba(0,0,0,0.55)",
         cyber:
-          "0 0 0 1px rgb(var(--accent) / 0.16), 0 12px 36px rgba(0, 0, 0, 0.55), 0 0 28px rgb(var(--accent-glow) / 0.12)",
+          "0 0 0 1px rgb(var(--accent) / 0.16), 0 12px 36px rgba(0, 0, 0, 0.55), 0 0 18px rgb(var(--accent-glow) / 0.12)",
       },
       backgroundImage: {
         "grid-cyber":
