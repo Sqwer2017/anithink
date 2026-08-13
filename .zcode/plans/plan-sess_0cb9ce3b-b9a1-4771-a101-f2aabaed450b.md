@@ -1,51 +1,87 @@
-# План: Апгрейд Live2D-маскота (анимации, Drag&Drop, ИИ-чат)
+# План: Комплексный фикс (Gemini, регистрация, Google-онбординг, синхронизация)
 
-## Файлы
-1. `src/app/api/mascot/chat/route.ts` — новый POST-роут ИИ-чата
-2. `src/components/Mascot.tsx` — переработка (жест, drag, чат-облачко)
+## Схема: ответы подтверждают
+- Google-онбординг → сущ-ая `profiles` (nickname/tag/password_set)
+- SQL → пишу миграции, пользователь запустит вручную в Supabase
+- История → единая `user_anime` (is_favorite/watch_status/in_history)
 
 ---
 
-## 1. Фикс анимаций (блокировка повтора)
-- Локальный `isPlayingMotion` флаг в ref.
-- `playMotion(group, index, priority)`: если `isPlayingMotion` — игнор. Устанавливает `true`, затем `startMotion(...)`. Сбрасывает в `false` через `setTimeout` на ~длительность моушн (или через колбэк завершения от motionManager). Простая надёжная версия: `setTimeout` фикс-длительность (~1.5с).
-- Используется для Tap по клику и для «мысли/разговора» при генерации ИИ-ответа.
+## Задача 1 — Gemini роут (`src/app/api/mascot/chat/route.ts`)
+- Добавить `export const dynamic = "force-dynamic";` (рядом с `runtime = "nodejs"`).
+- Расширить `catch` в POST: `console.error("[Gemini Error Detail]:", err)` c полным объектом/сообщением (плюс `err?.status`/`err?.cause` если есть).
+- Убедиться fetch: `headers: { "Content-Type": "application/json" }` (уже есть) + корректный payload `systemInstruction`/`contents` (уже есть) — поправлю если отхожу.
 
-## 2. Drag & Drop (ПК + mobile) + сохранение позиции
-- Всё на **Pointer Events** (`onPointerDown/Move/Up` + `setPointerCapture`).
-- `containerRef` — контейнер маскота (сейчас `fixed bottom-0 right-0`). При drag переключаем на `position: fixed; left: X; top: Y` (в px).
-- Разделение Клик/Перетаскивание:
-  - `onPointerDown`: запомнить `startX/startY`, `dragging=false`.
-  - `onPointerMove`: если удаление от старта >5px → `dragging=true`, двигать контейнер.
-  - `onPointerUp`: если `!dragging` (короткий клик) → **проиграть Tap** + **открыть/закрыть чат**. Если `dragging` → сохранение позиции.
-- **Сохранение**: `localStorage.setItem("mascot_position", JSON.stringify({x, y}))`. При загрузке — восстановить `left/top` из localStorage, иначе дефолт `bottom-0 right-0`.
-- Ограничить позицию, чтобы маскот не улетал за экран (clamp по viewport).
+## Задача 2 — Регистрация (email/password) + тег
+- **`auth-modal.tsx`**: в `handleSubmit` signup уже передаёт `options.data { nickname, tag }` — оставляю. Улучшаю:
+  - Sanitize тега: `cleanTag` → `lowercase.replace(/[\s@]/g,"").replace(/[^a-z0-9_]/g,"").slice(0,30)` (убрать лишний `@`, пробелы, спецсимволы; cap 30).
+  - Placeholder "Sqwer"/"sqwer" → убираю (пусто/"@nickname"). Проверю: это placeholder, не value; заменю на нейтральные.
+- **Главный фикс — триггер profiles**: создать SQL-миграцию с функцией `handle_new_user()` и триггером `on_auth_user_created`:
+  ```sql
+  create or replace function public.handle_new_user()
+  returns trigger as $$
+  begin
+    insert into public.profiles (id, email, nickname, tag, full_name, avatar_url)
+    values (
+      new.id,
+      new.email,
+      coalesce(new.raw_user_meta_data->>'nickname', split_part(new.email,'@',1)),
+      coalesce(lower(new.raw_user_meta_data->>'tag'), split_part(new.email,'@',1)),
+      coalesce(new.raw_user_meta_data->>'nickname', new.raw_user_meta_data->>'full_name', split_part(new.email,'@',1)),
+      new.raw_user_meta_data->>'avatar_url'
+    )
+    on conflict (id) do nothing;
+    return new;
+  end; $$ language plpgsql security definer;
+  create trigger on_auth_user_created after insert on auth.users
+    for each row execute procedure public.handle_new_user();
+  ```
+  - Использует ИМЕННО `raw_user_meta_data.nickname/tag` (а НЕ email), как просили. Email — только фолбэк в `nickname`.
+  - `@` к тегу: на фронте cleanTag без `@`; триггер хранит tag без `@` (UI показывает `@${tag}`). В онбординге (З3) обработаю ручной ввод с `@`.
 
-## 3. ИИ-роут `src/app/api/mascot/chat/route.ts`
-- `POST` c `{ message, history: [{role, content}] }`.
-- `export const runtime = "nodejs"` (для fetch Google API).
-- Собирает `contents` из history + message.
-- System Instruction: «Ты — Синко (Thinko), жизнерадостная и милая аниме-помощница на сайте AniThink. Твоя цель — помогать пользователям выбирать аниме, обсуждать тайтлы и поддерживать разговор. Отвечай кратко (2-3 предложения), с лёгким аниме-эмодзи и задором.»
-- Если `process.env.GEMINI_API_KEY` есть → fetch `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=...` через `POST` c `{ system_instruction, contents }`. Возврат `text` из `candidates[0].content.parts[0].text`.
-- Если ключа нет или ошибка → возврат случайного уютного заглушечного ответа (массив из ~8 вариантов типа «О! Ты хочешь обсудить аниме? Попробуй глянуть "Милый во Франксе" или "Магическую битву"! ✨»).
-- Ошибки: try/catch → 500 `{ error }`.
+## Задача 3 — Google-онбординг после OAuth
+- **Новый файл `src/app/auth/onboarding/page.tsx`** (клиент): вызывается после `/auth/callback` если профиль не заполнен.
+- **`src/app/auth/callback/page.tsx`** — после успешного `exchangeCodeForSession`:
+  ```ts
+  const { data } = await supabase.auth.getUser();
+  const { data: profile } = await supabase.from("profiles").select("id, tag, nickname").eq("id", user.id).maybeSingle();
+  const completed = profile && profile.tag && profile.tag !== "anithink_user" && profile.nickname;
+  router.replace(completed ? "/" : "/auth/onboarding");
+  ```
+- **Обнарддинг-модалка** (на странице `/auth/onboarding`): поля Нікнейм, Тег (с префиксом @), опционально пароль. Кнопка «Завершить регистрацию»:
+  ```ts
+  // тег: ввод с @ → очистить в @, sanitize
+  upsert profiles (id, nickname, tag) onConflict id
+  если не пуст пароль → supabase.auth.updateUser({ password }); update password_set = true
+  router.replace("/")
+  ```
+- Добавить колонку `password_set boolean default false` в `profiles` (миграция).
+- Показывать пароль-поле только если это Google-юз (можно всегда показывать опционально).
 
-## 4. UI Chat-облачка над маскотом
-- Внутри `containerRef` (над canvas), **`pointer-events-auto`** (важно: родитель `pointer-events-none`).
-- Позиционирование: `absolute bottom-full mb-2 right-4 w-72` — над головой персонажа.
-- Анимированное появление: framer-motion уже в проекте — `AnimatePresence` + `motion` (opacity/scale). Внутри Mascot это клиентский компонент, motion доступен.
-- Содержимое:
-  - Заголовок «Синко 💬» + кнопка-крестик (закрыть).
-  - Скроллящаяся история (2-3 последних сообщения) — сообщения `{role, content}`.
-  - Поле ввода + кнопка отправки (Send из lucide).
-- **Липский стиль**: игривый `bg-card border-border shadow-cyber`, свои сообщения `bg-accent text-background`, ответы `bg-surface/90 border-border`. Лёгкие аниме-эмодзи.
-- **Голосовая активность при генерации**: пока ждём ответ — `startMotion("Idle", random, FORCE)` (мысли/речь) либо маленькая пульсация индикатора «Синко думает…».
-- Отправка: POST на `/api/mascot/chat`, добавить ответ в стейт history. Хранить историю в компоненте (useState) + snapshot в localStorage (`mascot_chat`), чтобы не терять при релоаде.
+## Задача 4 — синхронизация user_anime
+- **Слияние при входе**: добавить в клиент (например, в `profile-client.tsx` после onAuthStateChange при наличии сессии) функцию, которая читает localStorage-списки (`anithink:favorites`, `anithink:history`, `anithink:watch-statuses`) и батчем upsert в `user_anime`:
+  - favorites → `{ is_favorite: true }`
+  - history → `{ in_history: true }`
+  - watch-status → `{ watch_status }`
+  - делаю `upsert(rows, { onConflict:"user_id,anime_id" })` одним запросом (батч).
+- **RLS**: уже есть в `user_anime` (select_all / insert/update/delete_owner с `auth.uid()=user_id`). Подтверждаю в миграции; добавлю если чего-то не хватает.
+- **Исправить `syncHistoryToUserAnime`**: сейчас ставит `in_history` и не дедуплицирует/не лимитирует — ок, но при выходе не очищается. Оставляю (это персистент).
+- Обновлю `user-anime.ts` при необходимости (батч-upsert helper `mergeLocalToSupabase`).
 
-## Поведение pointer-events
-- Родитель контейнера остаётся `pointer-events-none`, canvas — `[&_canvas]:pointer-events-auto`, чат-облачко — `pointer-events-auto`. Именно canvas получает pointer handlers (drag/click маскота).
-- Слушатели drag/click цепляем на `view` (canvas), чат-облачко — отдельный div внутри, не перекрывает canvas и сам прозрачен для событий при `pointer-events-none` на облачке, кроме элементов ввода.
+## Файлы (код)
+1. `src/app/api/mascot/chat/route.ts` — dynamic, лог.
+2. `src/components/auth/auth-modal.tsx` — sanitize тега, placeholder.
+3. `src/app/auth/callback/page.tsx` — проверка профиля + редирект на онбординг.
+4. `src/app/auth/onboarding/page.tsx` — новый (модалка заполнения).
+5. `src/lib/user-anime.ts` — helper батч-слияния localStorage→user_anime.
+6. `src/app/profile/profile-client.tsx` (или хука) — вызов слияния при входе.
+
+## Supabase (миграция — пользователь запустит сам)
+`supabase/migrations/<date>_auth_onboarding_sync.sql`:
+- `alter table profiles add column if not exists password_set boolean not null default false;`
+- функция+триггер `handle_new_user` / `on_auth_user_created`
+- (опционально) усиление RLS на user_anime если нужно.
 
 ## Проверка
-- `npm run build`.
-- Ручное: клик по маскоту → Tap + чат открывается; подержать и потянуть → маскот двигается, позиция сохраняется; перезагрузка → позиция восстановлена; отправить в чат → ответ (заглушка если нет ключа).
+- `npm run build` — типы.
+- Вручную: регистрация → триггер создаёт profile с nickname/tag из metadata; Google-вход → если без tag, редирект на онбординг; после заполнения → на "/"; автор залогинен → локальные сохранёнки сливаются в user_anime.

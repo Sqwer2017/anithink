@@ -31,6 +31,7 @@ import { compressImage } from "@/lib/local-media";
 import { uploadProfileMedia } from "@/lib/media-upload";
 import { toast } from "@/components/providers/toast-provider";
 import { supabase } from "@/lib/supabase";
+import { mergeLocalToSupabase } from "@/lib/user-anime";
 import { AuthModal } from "@/components/auth/auth-modal";
 import { useSignOut } from "@/lib/use-sign-out";
 
@@ -64,6 +65,8 @@ export function ProfileClient() {
   const [hidden, setHidden] = useState(false);
   const [showAllCompleted, setShowAllCompleted] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  // Показываем, что авторизация/данные ещё грузятся — чтобы не сбрасывать статистику в 0
+  const [authLoading, setAuthLoading] = useState(true);
 
   // Состояние авторизации
   const [authUser, setAuthUser] = useState<unknown>(null);
@@ -76,63 +79,109 @@ export function ProfileClient() {
   const signOut = useSignOut();
 
   useEffect(() => {
+    let cancelled = false;
+
+    // Загрузка списка аниме по ids. НЕ сбрасываем на 0 при ошибке сети —
+    // иначе статистика мигает/обнуляется.
     const loadAnime = (ids: string[], set: (anime: Anime[]) => void) => {
       if (!ids.length) {
-        set([]);
+        if (!cancelled && !authLoading) set([]);
         return;
       }
-      void fetch(`/api/saved?ids=${ids.slice(0, 30).join(",")}`)
+      void fetch(`/api/saved?ids=${ids.slice(0, 60).join(",")}`)
         .then((response) => response.json())
-        .then(set)
-        .catch(() => set([]));
+        .then((data) => { if (!cancelled) set(data); })
+        .catch(() => { /* НЕ обнуляем на сетевой ошибке */ });
+    };
+
+    // Мерджит локальные ids с данными из user_anime (если юзер залогинен)
+    const mergeWithDb = (localIds: string[], dbRows: { anime_id: string }[]): string[] => {
+      const set = new Set(localIds);
+      dbRows.forEach((r) => set.add(r.anime_id));
+      return [...set];
     };
 
     const sync = async () => {
+      // Пока статус авторизации грузится — не трогаем уже отрисованную статистику
+      if (cancelled) return;
+
       const saved = readProfile();
       setProfile(saved);
       setHidden(saved.isSavedPrivate);
-      loadAnime(readIds(HISTORY_STORAGE_KEY), setRecent);
-      loadAnime(readCompletedIds(), setCompleted);
-      loadAnime(readIds("anithink:favorites"), setFavorites);
+
+      let historyIds = readIds(HISTORY_STORAGE_KEY);
+      let completedIds = readCompletedIds();
+      let favorIds = readIds("anithink:favorites");
 
       // Проверяем сессию в Supabase
       if (supabase) {
         const { data } = await supabase.auth.getUser();
+        if (cancelled) return;
         setAuthUser(data.user);
 
-        // Если юзер авторизован — подтягиваем данные из базы
+        // Если юзер авторизован — подтягиваем данные из базы и мерджим
         if (data.user) {
-          const { data: dbProfile } = await supabase
-            .from("profiles")
-            .select("nickname, full_name, tag, avatar_url, cover_url, telegram, discord, steam, instagram, bio")
-            .eq("id", data.user.id)
-            .single();
+          try {
+            const { data: dbProfile } = await supabase
+              .from("profiles")
+              .select("nickname, full_name, tag, avatar_url, cover_url, telegram, discord, steam, instagram, bio")
+              .eq("id", data.user.id)
+              .single();
 
-          if (dbProfile) {
-            const fetchedName =
-              dbProfile.nickname || dbProfile.full_name || data.user.email?.split("@")[0];
+            if (dbProfile) {
+              const fetchedName =
+                dbProfile.nickname || dbProfile.full_name || data.user.email?.split("@")[0];
 
-            setProfile((prev) => {
-              if (!prev) return prev;
-              const next = {
-                ...prev,
-                nickname: fetchedName || prev.nickname,
-                tag: dbProfile.tag || prev.tag,
-                avatar: dbProfile.avatar_url || prev.avatar,
-                cover: dbProfile.cover_url || prev.cover,
-                telegram: dbProfile.telegram || prev.telegram,
-                discord: dbProfile.discord || prev.discord,
-                steam: dbProfile.steam || prev.steam,
-                instagram: dbProfile.instagram || prev.instagram,
-                bio: dbProfile.bio || prev.bio,
-              };
-              // Сохраняем в localStorage и диспатчим событие для сайдбаров
-              saveProfile(next);
-              return next;
-            });
+              setProfile((prev) => {
+                if (!prev) return prev;
+                const next = {
+                  ...prev,
+                  nickname: fetchedName || prev.nickname,
+                  tag: dbProfile.tag || prev.tag,
+                  avatar: dbProfile.avatar_url || prev.avatar,
+                  cover: dbProfile.cover_url || prev.cover,
+                  telegram: dbProfile.telegram || prev.telegram,
+                  discord: dbProfile.discord || prev.discord,
+                  steam: dbProfile.steam || prev.steam,
+                  instagram: dbProfile.instagram || prev.instagram,
+                  bio: dbProfile.bio || prev.bio,
+                };
+                saveProfile(next);
+                return next;
+              });
+            }
+
+            // Мерджим локальные списки с user_anime (избранное/статусы/история)
+            const { data: userAnime } = await supabase
+              .from("user_anime")
+              .select("anime_id, is_favorite, watch_status, in_history")
+              .eq("user_id", data.user.id);
+            if (userAnime && !cancelled) {
+              if (userAnime.some((r) => r.in_history)) {
+                historyIds = mergeWithDb(historyIds, userAnime.filter((r) => r.in_history));
+              }
+              if (userAnime.some((r) => r.watch_status === "completed")) {
+                completedIds = mergeWithDb(
+                  completedIds,
+                  userAnime.filter((r) => r.watch_status === "completed"),
+                );
+              }
+              if (userAnime.some((r) => r.is_favorite)) {
+                favorIds = mergeWithDb(favorIds, userAnime.filter((r) => r.is_favorite));
+              }
+            }
+          } catch (err) {
+            // Ошибка сети/запроса к Supabase — НЕ сбрасываем локальные данные
+            console.error("profile sync supabase error:", err);
           }
         }
       }
+
+      if (cancelled) return;
+      setAuthLoading(false);
+      loadAnime(historyIds, setRecent);
+      loadAnime(completedIds, setCompleted);
+      loadAnime(favorIds, setFavorites);
     };
 
     sync();
@@ -141,13 +190,21 @@ export function ProfileClient() {
     if (supabase) {
       const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
         setAuthUser(session?.user ?? null);
-        if (session?.user) sync();
+        if (session?.user) {
+          sync();
+          // При входе сливаем локальные сохранёнки/историю в Supabase
+          void mergeLocalToSupabase(session.user.id);
+        } else {
+          setAuthLoading(false);
+        }
       });
 
       return () => {
+        cancelled = true;
         authListener.subscription.unsubscribe();
       };
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!profile) return null;

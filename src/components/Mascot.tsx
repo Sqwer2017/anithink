@@ -152,16 +152,25 @@ export default function Mascot() {
     playMotion(modelRef.current, "Tap", Math.floor(Math.random() * 3), 12, 1200);
 
     try {
-      const res = await fetch("/api/mascot/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, history: messages }),
-      });
-      const data = await res.json();
-      const reply: ChatMsg = { role: "assistant", content: data.reply || "…" };
-      const final = [...next, reply];
-      setMessages(final);
-      window.localStorage.setItem(CHAT_KEY, JSON.stringify(final.slice(-6)));
+      // Клиентский таймаут 20с — чтобы "Синко думает…" не висело вечно,
+      // если роут/сеть зависла.
+      const controller = new AbortController();
+      const clientTimeout = setTimeout(() => controller.abort(), 20000);
+      try {
+        const res = await fetch("/api/mascot/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({ message: text, history: messages }),
+        });
+        const data = await res.json();
+        const reply: ChatMsg = { role: "assistant", content: data.reply || "…" };
+        const final = [...next, reply];
+        setMessages(final);
+        window.localStorage.setItem(CHAT_KEY, JSON.stringify(final.slice(-6)));
+      } finally {
+        clearTimeout(clientTimeout);
+      }
     } catch {
       const reply: ChatMsg = { role: "assistant", content: "Ой, у меня сбой! Попробуй ещё раз 🌸" };
       setMessages((m) => [...m, reply]);

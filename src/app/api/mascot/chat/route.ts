@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 interface ChatMessage {
   role: string;
@@ -47,33 +48,47 @@ async function callGemini(
   }));
   contents.push({ role: "user", parts: [{ text: message }] });
 
-  const res = await fetch(`${GEMINI_MODEL}?key=${encodeURIComponent(key)}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      systemInstruction: {
-        parts: [{ text: SYSTEM_INSTRUCTION }],
-      },
-      contents,
-      generationConfig: {
-        temperature: 0.8,
-        maxOutputTokens: 8000,
-      },
-    }),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000); // 15с таймаут — не висим вечно
 
-  if (!res.ok) {
-    throw new Error(`Gemini status: ${res.status}`);
+  try {
+    const res = await fetch(`${GEMINI_MODEL}?key=${encodeURIComponent(key)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        systemInstruction: {
+          parts: [{ text: SYSTEM_INSTRUCTION }],
+        },
+        contents,
+        generationConfig: {
+          temperature: 0.8,
+          maxOutputTokens: 8000,
+        },
+      }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Gemini status: ${res.status}`);
+    }
+
+    const data = await res.json();
+    const text: string | undefined =
+      data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    if (!text) {
+      throw new Error("Gemini вернул пустой ответ");
+    }
+    return text.trim();
+  } catch (err) {
+    // AbortError из-за таймаута — пробрасываем как обычную ошибку (→ fallback)
+    if ((err as Error)?.name === "AbortError") {
+      throw new Error("Gemini timeout");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
   }
-
-  const data = await res.json();
-  const text: string | undefined =
-    data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-  if (!text) {
-    throw new Error("Gemini вернул пустой ответ");
-  }
-  return text.trim();
 }
 
 export async function POST(request: NextRequest) {
@@ -99,7 +114,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ reply });
   } catch (err) {
     // Ключ не задан или ошибка Gemini — логируем точную причину и отдаём заглушку
-    console.error("Gemini Error:", err);
+    const e = err as Error & { status?: number; cause?: unknown };
+    console.error("[Gemini Error Detail]:", {
+      name: e?.name,
+      message: e?.message,
+      status: e?.status ?? undefined,
+      cause: e?.cause ?? undefined,
+      hasApiKey: Boolean(process.env.GEMINI_API_KEY),
+    });
     return NextResponse.json({ reply: randomFallback() });
   }
 }

@@ -37,14 +37,39 @@ function AuthCallbackInner() {
 
     supabase.auth
       .exchangeCodeForSession(code)
-      .then(({ error }) => {
+      .then(async ({ error }) => {
         if (cancelled) return;
         if (error) {
           console.error("OAuth exchangeCodeForSession error:", error.message);
           setError(error.message);
           return;
         }
-        router.replace("/profile");
+        // После OAuth проверяем, заполнен ли профиль (nickname/tag).
+        // Если новый Google-пользователь не завершил регистрацию — ведём в онбординг.
+        if (!supabase) return;
+        try {
+          const { data: userData } = await supabase.auth.getUser();
+          const user = userData?.user;
+          if (!user) {
+            router.replace("/");
+            return;
+          }
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("id, tag, nickname")
+            .eq("id", user.id)
+            .maybeSingle();
+
+          const completed =
+            profile &&
+            profile.nickname &&
+            profile.tag &&
+            profile.tag !== "anithink_user";
+
+          router.replace(completed ? "/" : "/auth/onboarding");
+        } catch {
+          router.replace("/");
+        }
       })
       .catch((err: unknown) => {
         if (cancelled) return;

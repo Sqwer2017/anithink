@@ -5,6 +5,38 @@ const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 /**
+ * Очищает название для поиска: обрезает всё после двоеточия/тире/точки,
+ * убирает номера сезонов в конце (включая "ТВ-2").
+ * «Реинкарнация безработного: История о приключениях в другом мире 2 — Маг-хранитель Фитц»
+ * → «реинкарнация безработного»
+ */
+function cleanTitle(s: string): string {
+  return s
+    .toLowerCase()
+    // Отбрасываем подзаголовок после : или — или - или .
+    .split(/[:—–\-.]/)[0]
+    .replace(/\(.+?\)/g, "")
+    .replace(/\b(season|сезон|tv)\s*\d+/gi, "")
+    .replace(/\b\d+-?\d*\s*$/, "")
+    .replace(/[^a-zа-яё0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Ответ «не найдено» — HTTP 200 (без 404, чтобы не замусоривать консоль браузера). */
+function notFound(message = "Не найдено") {
+  return NextResponse.json({ success: false, items: [], message });
+}
+
+/** Fuzzy-совпадение: очищенный запрос содержится в названии результата. */
+function isFuzzyMatch(query: string, candidate: string): boolean {
+  const q = cleanTitle(query);
+  const c = cleanTitle(candidate);
+  if (!q || !c) return false;
+  return c.includes(q) || q.includes(c) || c.split(" ").slice(0, 2).join(" ") === q.split(" ").slice(0, 2).join(" ");
+}
+
+/**
  * Серверный прокси AniLiberty (зеркало Anilibria).
  *
  * Логика:
@@ -42,38 +74,35 @@ export async function GET(request: NextRequest) {
 
     // ── 1. Поиск по названию ──
     if (!releaseAlias && query) {
-      const searchUrl = `${ANILIBERTY_API}/app/search/releases?query=${encodeURIComponent(query)}&limit=10`;
+      // Очищаем запрос (убираем сезон/скобки/подзаголовок) для точного поиска в API
+      const cleanQuery = cleanTitle(query);
+      const searchUrl = `${ANILIBERTY_API}/app/search/releases?query=${encodeURIComponent(cleanQuery || query)}&limit=10`;
       const searchRes = await fetch(searchUrl, {
         headers,
         next: { revalidate: 300 },
       });
 
       if (!searchRes.ok) {
-        return NextResponse.json(
-          { error: `API search: ${searchRes.status}` },
-          { status: searchRes.status },
-        );
+        return notFound(`API search: ${searchRes.status}`);
       }
 
       const searchJson = await searchRes.json().catch(() => null);
       const results = Array.isArray(searchJson) ? searchJson : searchJson?.data ?? [];
 
       if (results.length === 0) {
-        return NextResponse.json({ error: "Тайтл не найден в AniLibria" }, { status: 404 });
+        return notFound();
       }
 
-      // Точное совпадение по рус/англ названию, иначе — первый результат
-      const normalized = query.toLowerCase();
+      // Fuzzy-сопоставление по всем названиям (main / english / alternative)
       const match =
-        results.find(
-          (r: any) =>
-            String(r?.name?.main || "").toLowerCase() === normalized ||
-            String(r?.name?.english || "").toLowerCase() === normalized,
-        ) ?? results[0];
+        results.find((r: any) => {
+          const names = [r?.name?.main, r?.name?.english, r?.name?.alternative].filter(Boolean);
+          return names.some((n: string) => isFuzzyMatch(query, n));
+        }) ?? results[0];
 
       releaseAlias = String(match?.alias || "").toLowerCase();
       if (!releaseAlias) {
-        return NextResponse.json({ error: "Не удалось определить alias" }, { status: 404 });
+        return notFound();
       }
     }
 
@@ -85,22 +114,19 @@ export async function GET(request: NextRequest) {
     });
 
     if (!releaseRes.ok) {
-      return NextResponse.json(
-        { error: `API releases: ${releaseRes.status}` },
-        { status: releaseRes.status },
-      );
+      return notFound(`API releases: ${releaseRes.status}`);
     }
 
     const releaseJson = await releaseRes.json().catch(() => null);
     const release = releaseJson?.data?.[0] ?? (Array.isArray(releaseJson) ? releaseJson[0] : null);
 
     if (!release) {
-      return NextResponse.json({ error: "Релиз не найден" }, { status: 404 });
+      return notFound();
     }
 
     const episodesList = release.episodes ?? [];
     if (episodesList.length === 0) {
-      return NextResponse.json({ error: "У данного тайтла нет серий" }, { status: 404 });
+      return notFound("У данного тайтла нет серий");
     }
 
     // ── 3. Формирование эпизодов ──
@@ -129,7 +155,7 @@ export async function GET(request: NextRequest) {
     });
 
     if (Object.keys(formattedEpisodes).length === 0) {
-      return NextResponse.json({ error: "У тайтла нет доступных HLS-потоков" }, { status: 404 });
+      return notFound("У тайтла нет доступных HLS-потоков");
     }
 
     return NextResponse.json({

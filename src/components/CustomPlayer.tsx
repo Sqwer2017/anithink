@@ -55,6 +55,13 @@ export default function CustomPlayer({ title, alias }: CustomPlayerProps) {
       .then((res) => res.json())
       .then((data) => {
         if (!isMounted) return;
+        // API может вернуть { success: false } — это не ошибка, а "озвучка не найдена".
+        if (data.success === false) {
+          setError(null);
+          setEpisodes({});
+          setLoading(false);
+          return;
+        }
         if (data.error || !data.episodes) {
           throw new Error(data.error || "Не удалось загрузить серии");
         }
@@ -132,6 +139,16 @@ export default function CustomPlayer({ title, alias }: CustomPlayerProps) {
             <span className="text-3xl">⚠️</span>
             <p className="text-base font-semibold">Ошибка загрузки</p>
             <p className="max-w-sm text-xs text-muted">{error}</p>
+          </div>
+        )}
+
+        {!loading && !error && Object.keys(episodes).length === 0 && (
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-background/95 p-6 text-center">
+            <span className="text-3xl">🔍</span>
+            <p className="text-base font-semibold">Озвучки не найдено</p>
+            <p className="max-w-sm text-xs text-muted">
+              В AniLibria нет озвучки для этого тайтла. Попробуйте переключиться на Kodik.
+            </p>
           </div>
         )}
 

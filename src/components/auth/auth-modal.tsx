@@ -50,7 +50,14 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
     setLoading(true);
 
     const cleanEmail = email.trim();
-    const cleanTag = tag.trim().toLowerCase().replace(/^@+/, "").replace(/\s+/g, "");
+    // Тег: убираем @ и пробелы в начале, спецсимволы, приводом к lowercase, лимит 30
+    const cleanTag = tag
+      .trim()
+      .toLowerCase()
+      .replace(/^@+/, "")
+      .replace(/[\s@]/g, "")
+      .replace(/[^a-z0-9_]/g, "")
+      .slice(0, 30);
 
     try {
       if (isSignUp) {
@@ -188,7 +195,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
                   required
                   value={nickname}
                   onChange={(e) => setNickname(e.target.value)}
-                  placeholder="Sqwer"
+                  placeholder="Ваш никнейм"
                   className="w-full rounded-xl border border-border bg-surface px-4 py-2.5 text-sm outline-none focus:border-accent"
                 />
               </div>
@@ -202,7 +209,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
                     required
                     value={tag}
                     onChange={(e) => setTag(e.target.value)}
-                    placeholder="sqwer"
+                    placeholder="nickname"
                     className="w-full rounded-xl border border-border bg-surface py-2.5 pl-8 pr-4 text-sm outline-none focus:border-accent"
                   />
                 </div>
