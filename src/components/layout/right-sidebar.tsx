@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronRight } from "lucide-react";
@@ -36,11 +36,26 @@ export function RightSidebar() {
   const [profile, setProfile] = useState<LocalProfile | null>(null);
   const [notificationCount, setNotificationCount] = useState(0);
   const signOut = useSignOut();
+  // Ref ширины для оповещения плавающей кнопки при анимации раскрытия сайдбара.
+  const asideRef = useRef<HTMLElement>(null);
+  const lastW = useRef(COLLAPSED_WIDTH);
+  const notifyWidth = () => {
+    const el = asideRef.current;
+    if (!el) return;
+    const w = el.getBoundingClientRect().width || el.offsetWidth || COLLAPSED_WIDTH;
+    if (Math.round(w) !== Math.round(lastW.current)) {
+      lastW.current = w;
+      window.dispatchEvent(new CustomEvent("anithink:sidebar-width", { detail: w }));
+    }
+  };
   useEffect(() => { const syncProfile = () => setProfile(readProfile()); const syncNotifications = (event: Event) => setNotificationCount((event as CustomEvent<number>).detail); const clearNotifications = () => setNotificationCount(0); syncProfile(); window.addEventListener("anithink:profile-changed", syncProfile); window.addEventListener("anithink:notifications-changed", syncNotifications); window.addEventListener("anithink:notifications-read", clearNotifications); void fetch("/api/notifications").then((response) => response.json()).then((data) => { const dismissed: unknown = JSON.parse(window.localStorage.getItem("anithink:notifications-dismissed") ?? "[]"); const dismissedIds = new Set(Array.isArray(dismissed) ? dismissed : []); const items = [...data.news, ...data.ongoing].filter((item: { id: string }) => !dismissedIds.has(item.id)); const rawSeen = window.localStorage.getItem("anithink:notifications-seen"); const seen: unknown = JSON.parse(rawSeen ?? "[]"); if (rawSeen === null) { window.localStorage.setItem("anithink:notifications-seen", JSON.stringify(items.map((item: { id: string }) => item.id))); setNotificationCount(0); return; } const seenIds = new Set(Array.isArray(seen) ? seen : []); setNotificationCount(items.filter((item: { id: string }) => !seenIds.has(item.id)).length); }).catch(() => {}); return () => { window.removeEventListener("anithink:profile-changed", syncProfile); window.removeEventListener("anithink:notifications-changed", syncNotifications); window.removeEventListener("anithink:notifications-read", clearNotifications); }; }, []);
 
   return (
     <motion.aside
+      ref={asideRef}
+      data-sidebar
       animate={{ width: open ? EXPANDED_WIDTH : COLLAPSED_WIDTH }}
+      onUpdate={notifyWidth}
       transition={{ type: "spring", stiffness: 320, damping: 34 }}
       className={cn(
         "relative z-20 hidden h-full shrink-0 flex-col border-l border-border bg-surface/60 backdrop-blur-xl lg:flex",
@@ -95,7 +110,13 @@ export function RightSidebar() {
       {/* Список пунктов */}
       <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-2 scrollbar-cyber">
         {PROFILE_NAV.map((item) => (
-          <ProfileLink key={item.href} item={item} expanded={open} badge={item.href === "/notifications" && notificationCount ? String(notificationCount) : undefined} />
+          <Fragment key={item.href}>
+            {/* Разделитель перед «Отзывы», чтобы отделить от «Друзей» */}
+            {item.href === "/feedback" && (
+              <div className="my-1.5 border-t border-border/60" />
+            )}
+            <ProfileLink item={item} expanded={open} badge={item.href === "/notifications" && notificationCount ? String(notificationCount) : undefined} />
+          </Fragment>
         ))}
       </nav>
 

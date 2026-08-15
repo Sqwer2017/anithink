@@ -1,87 +1,47 @@
-# План: Комплексный фикс (Gemini, регистрация, Google-онбординг, синхронизация)
+# План: Дизайн отзывов + плавающая кнопка «Отзыв» с морфингом
 
-## Схема: ответы подтверждают
-- Google-онбординг → сущ-ая `profiles` (nickname/tag/password_set)
-- SQL → пишу миграции, пользователь запустит вручную в Supabase
-- История → единая `user_anime` (is_favorite/watch_status/in_history)
+## Исследование подтверждает
+- `reviews.user_id` → `profiles.id` = `profiles.tag`. Нужно подтягивать `tag` отдельным запросом (нет FK на profiles; `user_id` → auth.users.id → profiles.id).
+- Рейтинг в БД `check 1-10`; оставлю (не сломает старые), форма = max 5 звёзд.
+- `PROFILE_NAV` в `navigation.ts` автоматически появляется в сайдбаре (right-sidebar) и мобильном drawer — достаточно добавить элемент.
+- Старая кнопка «Отзыв» в header убирается в пользу плавающей.
 
 ---
 
-## Задача 1 — Gemini роут (`src/app/api/mascot/chat/route.ts`)
-- Добавить `export const dynamic = "force-dynamic";` (рядом с `runtime = "nodejs"`).
-- Расширить `catch` в POST: `console.error("[Gemini Error Detail]:", err)` c полным объектом/сообщением (плюс `err?.status`/`err?.cause` если есть).
-- Убедиться fetch: `headers: { "Content-Type": "application/json" }` (уже есть) + корректный payload `systemInstruction`/`contents` (уже есть) — поправлю если отхожу.
+## 1. Плавающая круглая кнопка «Отзыв» с морфингом (везде)
+**Новый компонент `src/components/FeedbackFab.tsx`** (client):
+- **`fixed` в правом нижнем углу**: `bottom-24 right-3 sm:bottom-6 sm:right-6` (на мобиле выше мобильной навигации bottom-bar, ~96px).
+- **Круглая кнопка** `h-14 w-14 rounded-full` с иконкой `MessageSquarePlus`, цвет от темы (`bg-accent text-background shadow-neon`), hover-scale.
+- **Морфинг**: по клику кнопка анимированно расширяется (`framer-motion` scale/borderRadius) в **вытянутое вертикальное окно** обратной связи (широкое, ~320-360px). Суть: единый элемент `motion.div` анимирует `width/height/borderRadius` между «кружком» и «панелью», внутри которого рендерится либо иконка, либо форма.
+- **Форма** — reuse/встроить содержимое `FeedbackModal` (категории-табы, textarea, контакт, отправка, success). Закрытие — сжатие обратно в круг.
+- Разместить в `layout.tsx` рядом с `<Mascot />`.
+- Удалить старую кнопку «Отзыв» из header + старый `<FeedbackModal>` оттуда (заменить на FAB).
 
-## Задача 2 — Регистрация (email/password) + тег
-- **`auth-modal.tsx`**: в `handleSubmit` signup уже передаёт `options.data { nickname, tag }` — оставляю. Улучшаю:
-  - Sanitize тега: `cleanTag` → `lowercase.replace(/[\s@]/g,"").replace(/[^a-z0-9_]/g,"").slice(0,30)` (убрать лишний `@`, пробелы, спецсимволы; cap 30).
-  - Placeholder "Sqwer"/"sqwer" → убираю (пусто/"@nickname"). Проверю: это placeholder, не value; заменю на нейтральные.
-- **Главный фикс — триггер profiles**: создать SQL-миграцию с функцией `handle_new_user()` и триггером `on_auth_user_created`:
-  ```sql
-  create or replace function public.handle_new_user()
-  returns trigger as $$
-  begin
-    insert into public.profiles (id, email, nickname, tag, full_name, avatar_url)
-    values (
-      new.id,
-      new.email,
-      coalesce(new.raw_user_meta_data->>'nickname', split_part(new.email,'@',1)),
-      coalesce(lower(new.raw_user_meta_data->>'tag'), split_part(new.email,'@',1)),
-      coalesce(new.raw_user_meta_data->>'nickname', new.raw_user_meta_data->>'full_name', split_part(new.email,'@',1)),
-      new.raw_user_meta_data->>'avatar_url'
-    )
-    on conflict (id) do nothing;
-    return new;
-  end; $$ language plpgsql security definer;
-  create trigger on_auth_user_created after insert on auth.users
-    for each row execute procedure public.handle_new_user();
-  ```
-  - Использует ИМЕННО `raw_user_meta_data.nickname/tag` (а НЕ email), как просили. Email — только фолбэк в `nickname`.
-  - `@` к тегу: на фронте cleanTag без `@`; триггер хранит tag без `@` (UI показывает `@${tag}`). В онбординге (З3) обработаю ручной ввод с `@`.
+## 2. Пункт «Отзывы» в боковом меню + разделитель
+- **`src/lib/navigation.ts`**: добавить в `PROFILE_NAV` элемент `{ href: "/feedback", label: "Отзывы", icon: MessageSquarePlus }` ПОСЛЕ «Друзья». (Иконка уже импортируется в feedback; добавить импорт `MessageSquarePlus` в navigation.ts.)
+- **Разделитель**: чтобы «Отзывы» визуально отделить от «Друзей»:
+  - В `right-sidebar.tsx` — в рендере `PROFILE_NAV.map` вставить `<div className="my-1 border-t border-border/60" />` перед элементом `href === "/feedback"`.
+  - В `mobile-nav.tsx` — аналогичный разделитель в `PROFILE_NAV.map`.
 
-## Задача 3 — Google-онбординг после OAuth
-- **Новый файл `src/app/auth/onboarding/page.tsx`** (клиент): вызывается после `/auth/callback` если профиль не заполнен.
-- **`src/app/auth/callback/page.tsx`** — после успешного `exchangeCodeForSession`:
-  ```ts
-  const { data } = await supabase.auth.getUser();
-  const { data: profile } = await supabase.from("profiles").select("id, tag, nickname").eq("id", user.id).maybeSingle();
-  const completed = profile && profile.tag && profile.tag !== "anithink_user" && profile.nickname;
-  router.replace(completed ? "/" : "/auth/onboarding");
-  ```
-- **Обнарддинг-модалка** (на странице `/auth/onboarding`): поля Нікнейм, Тег (с префиксом @), опционально пароль. Кнопка «Завершить регистрацию»:
-  ```ts
-  // тег: ввод с @ → очистить в @, sanitize
-  upsert profiles (id, nickname, tag) onConflict id
-  если не пуст пароль → supabase.auth.updateUser({ password }); update password_set = true
-  router.replace("/")
-  ```
-- Добавить колонку `password_set boolean default false` в `profiles` (миграция).
-- Показывать пароль-поле только если это Google-юз (можно всегда показывать опционально).
+## 3. Страница отзывов: звезды, ава→профиль, заявка в друзья
+**`src/app/feedback/page.tsx`**:
+- **Рейтинг**: форма max **5 звёзд** (заменить `[1..10]` на `[1..5]`).
+- **Аватар кликабельный**: при загрузке отзывов добавить `user_id` в select + второй запрос `profiles.select("id, tag").in("id", userIds)` → мапа `user_id → tag`. Если у отзыва есть `tag` → обернуть ава в `<Link href={/user/${tag}}>` (переход на публичный профиль, где уже есть кнопка «Добавить в друзья» / заявка). Если `tag` нет (аноним) — `<span>`, не ссылка.
+- **Ава**: показать реальную `avatar_url` если есть (через profiles), иначе инициалы.
+- Остальное (ник, title, 5 звёзд визуально, дата) — оставить.
+- Убрать старую FAB/`FeedbackModal` со страницы — плавающая кнопка уже глобальная.
 
-## Задача 4 — синхронизация user_anime
-- **Слияние при входе**: добавить в клиент (например, в `profile-client.tsx` после onAuthStateChange при наличии сессии) функцию, которая читает localStorage-списки (`anithink:favorites`, `anithink:history`, `anithink:watch-statuses`) и батчем upsert в `user_anime`:
-  - favorites → `{ is_favorite: true }`
-  - history → `{ in_history: true }`
-  - watch-status → `{ watch_status }`
-  - делаю `upsert(rows, { onConflict:"user_id,anime_id" })` одним запросом (батч).
-- **RLS**: уже есть в `user_anime` (select_all / insert/update/delete_owner с `auth.uid()=user_id`). Подтверждаю в миграции; добавлю если чего-то не хватает.
-- **Исправить `syncHistoryToUserAnime`**: сейчас ставит `in_history` и не дедуплицирует/не лимитирует — ок, но при выходе не очищается. Оставляю (это персистент).
-- Обновлю `user-anime.ts` при необходимости (батч-upsert helper `mergeLocalToSupabase`).
-
-## Файлы (код)
-1. `src/app/api/mascot/chat/route.ts` — dynamic, лог.
-2. `src/components/auth/auth-modal.tsx` — sanitize тега, placeholder.
-3. `src/app/auth/callback/page.tsx` — проверка профиля + редирект на онбординг.
-4. `src/app/auth/onboarding/page.tsx` — новый (модалка заполнения).
-5. `src/lib/user-anime.ts` — helper батч-слияния localStorage→user_anime.
-6. `src/app/profile/profile-client.tsx` (или хука) — вызов слияния при входе.
-
-## Supabase (миграция — пользователь запустит сам)
-`supabase/migrations/<date>_auth_onboarding_sync.sql`:
-- `alter table profiles add column if not exists password_set boolean not null default false;`
-- функция+триггер `handle_new_user` / `on_auth_user_created`
-- (опционально) усиление RLS на user_anime если нужно.
+## Файлы
+1. `src/components/FeedbackFab.tsx` — новый (плавающая кнопка + морф-панель).
+2. `src/components/FeedbackModal.tsx` — оставлю (используется в FAB и на /feedback), при необходимости слегка подправлю использование.
+3. `src/app/layout.tsx` — добавить `<FeedbackFab />`.
+4. `src/components/layout/header.tsx` — убрать старую кнопку «Отзыв» + FeedbackModal.
+5. `src/lib/navigation.ts` — добавить «Отзывы» в PROFILE_NAV.
+6. `src/components/layout/right-sidebar.tsx` + `mobile-nav.tsx` — разделитель перед «Отзывы».
+7. `src/app/feedback/page.tsx` — 5 звёзд, ава→профиль (tag lookup), ник, поддержка avatar_url.
+8. `supabase/migrations/2026_reviews.sql` — (опционально) оставить check 1-10; не трогаю (безопасно). Никаких новых SQL не нужно для отзывов (форма по-прежнему вставляет max 5, что < 10).
 
 ## Проверка
-- `npm run build` — типы.
-- Вручную: регистрация → триггер создаёт profile с nickname/tag из metadata; Google-вход → если без tag, редирект на онбординг; после заполнения → на "/"; автор залогинен → локальные сохранёнки сливаются в user_anime.
+- `npm run build`.
+- Вручную: FAB виден в правом нижнем углу, морфит в окно и обратно, цвет от темы; «Отзывы» в сайдбаре (после Друзей с разделителем) и в мобиле; на /feedback форма 5 звёзд, ава кликает на /user/<tag>, рейтинг сохраняется.
+- Telegram-отправка из FAB работает (роут уже проверен ранее).

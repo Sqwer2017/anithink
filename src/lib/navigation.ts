@@ -11,6 +11,7 @@ import {
   ListVideo,
   History,
   MessageSquare,
+  MessageSquarePlus,
   Bell,
   Users,
   LogOut,
@@ -47,6 +48,7 @@ export const PROFILE_NAV: ProfileNavItem[] = [
   { href: "/chat", label: "Чат", icon: MessageSquare },
   { href: "/notifications", label: "Уведомления", icon: Bell },
   { href: "/friends", label: "Друзья", icon: Users },
+  { href: "/feedback", label: "Отзывы", icon: MessageSquarePlus },
 ];
 
 /**

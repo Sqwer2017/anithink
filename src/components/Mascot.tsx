@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Send, X, Sparkles } from "lucide-react";
-import { readSettings } from "@/lib/local-settings";
+import { readSettings, type MascotSkin } from "@/lib/local-settings";
 
 /**
  * Интерактивный Live2D-маскот (Unity-chan) + ИИ-чат.
@@ -49,7 +49,7 @@ export default function Mascot() {
   const [thinking, setThinking] = useState(false);
   const chatRef = useRef<HTMLDivElement>(null);
 
-  // Включён ли маскот (из настроек). При выключении — не рендерим ничего.
+  // Включён ли маскот (из настроек). При выключении — не рендерим маскота.
   const [enabled, setEnabled] = useState(() => {
     if (typeof window === "undefined") return true;
     try {
@@ -58,12 +58,23 @@ export default function Mascot() {
       return true;
     }
   });
+  // Выбранный скин Синко (pink / cyber / pikmi)
+  const [skin, setSkin] = useState<MascotSkin>(() => {
+    if (typeof window === "undefined") return "pink";
+    try {
+      return readSettings().mascotSkin ?? "pink";
+    } catch {
+      return "pink";
+    }
+  });
 
-  // Слушаем изменения настроек (переключатель Синко в /settings)
+  // Слушаем изменения настроек (переключатель + выбор скина)
   useEffect(() => {
     const onSettings = () => {
       try {
-        setEnabled(readSettings().mascotEnabled ?? true);
+        const s = readSettings();
+        setEnabled(s.mascotEnabled ?? true);
+        setSkin(s.mascotSkin ?? "pink");
       } catch { /* ignore */ }
     };
     window.addEventListener("anithink:settings-changed", onSettings);
@@ -211,7 +222,7 @@ export default function Mascot() {
       canvas.style.height = "100%";
       containerRef.current.appendChild(canvas);
 
-      const model = await Live2DModel.from("/mascot/unitychan.model3.json");
+      const model = await Live2DModel.from(`/mascot/mascot_${skin}.model3.json`);
       modelRef.current = model;
 
       const scale = Math.min(app.screen.width / model.width, app.screen.height / model.height) * 0.9;
@@ -324,7 +335,7 @@ export default function Mascot() {
       } catch { /* ignore */ }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [skin]);
 
   return (
     <div

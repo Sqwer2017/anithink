@@ -9,6 +9,8 @@ import { RightSidebar } from "@/components/layout/right-sidebar";
 import { MobileNav } from "@/components/layout/mobile-nav";
 import { ToastProvider } from "@/components/providers/toast-provider";
 import Mascot from "@/components/Mascot";
+import { FeedbackFab } from "@/components/FeedbackFab";
+import { GlobalAuthModal } from "@/components/auth/global-auth-modal";
 
 const inter = Inter({
   subsets: ["latin", "cyrillic"],
@@ -85,6 +87,12 @@ export default function RootLayout({
 
           {/* Интерактивный Live2D-маскот поверх всех страниц */}
           <Mascot />
+
+          {/* Плавающая кнопка «Отзыв» с морфингом */}
+          <FeedbackFab />
+
+          {/* Глобальная модалка входа (открывается с любых страниц) */}
+          <GlobalAuthModal />
         </ThemeProvider>
       </body>
     </html>

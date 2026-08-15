@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
@@ -156,22 +156,27 @@ export function MobileNav() {
                 {PROFILE_NAV.map((item) => {
                   const Icon = item.icon;
                   return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => setOpen(false)}
-                      className="flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-muted hover:bg-surface-2/60 hover:text-foreground"
-                    >
-                      <span className="flex items-center gap-3">
-                        <Icon className="h-5 w-5" />
-                        {item.label}
-                      </span>
-                      {item.badge && (
-                        <span className="rounded-md bg-accent/15 px-1.5 py-0.5 text-[10px] font-bold text-accent">
-                          {item.badge}
-                        </span>
+                    <Fragment key={item.href}>
+                      {/* Разделитель перед «Отзывы» */}
+                      {item.href === "/feedback" && (
+                        <div className="my-1.5 border-t border-border/60" />
                       )}
-                    </Link>
+                      <Link
+                        href={item.href}
+                        onClick={() => setOpen(false)}
+                        className="flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-muted hover:bg-surface-2/60 hover:text-foreground"
+                      >
+                        <span className="flex items-center gap-3">
+                          <Icon className="h-5 w-5" />
+                          {item.label}
+                        </span>
+                        {item.badge && (
+                          <span className="rounded-md bg-accent/15 px-1.5 py-0.5 text-[10px] font-bold text-accent">
+                            {item.badge}
+                          </span>
+                        )}
+                      </Link>
+                    </Fragment>
                   );
                 })}
 
