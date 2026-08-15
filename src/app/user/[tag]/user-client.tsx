@@ -42,6 +42,7 @@ interface TargetProfile {
   favorites_privacy: string;
   completed_privacy: string;
   history_privacy: string;
+  hide_stats?: boolean;
 }
 
 /* ======================== Component ======================== */
@@ -344,6 +345,13 @@ export function UserClient({ tag }: { tag: string }) {
   const compVisible = canSee(profile.completed_privacy);
   const histVisible = canSee(profile.history_privacy);
 
+  // Затраченное время из метаданных просмотренных тайтлов.
+  const showHours = !profile.hide_stats;
+  const minutesWatched = completed.reduce(
+    (total, anime) => total + (anime.duration || 0) * (anime.episodes || anime.episodes_aired || 0),
+    0,
+  );
+
   return (
     <>
       {/* Шапка профиля */}
@@ -498,7 +506,14 @@ export function UserClient({ tag }: { tag: string }) {
       </section>
 
       {/* Статистика */}
-      <section className="mt-7 grid gap-3 sm:grid-cols-3">
+      <section className={`mt-7 grid gap-3 ${showHours ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"}`}>
+        {showHours && (
+          <div className="rounded-2xl border border-border bg-card p-4 shadow-panel">
+            <Clock3 className="h-5 w-5 text-accent" />
+            <p className="mt-2 text-xs text-muted">Затрачено времени</p>
+            <p className="font-display text-lg font-bold">{Math.round(minutesWatched / 60)} ч</p>
+          </div>
+        )}
         <div className="rounded-2xl border border-border bg-card p-4 shadow-panel">
           <Film className="h-5 w-5 text-accent" />
           <p className="mt-2 text-xs text-muted">Просмотрено</p>

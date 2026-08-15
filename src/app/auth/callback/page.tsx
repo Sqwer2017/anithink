@@ -54,17 +54,65 @@ function AuthCallbackInner() {
             router.replace("/");
             return;
           }
+
+          // Если при регистрации не было сессии (подтверждение почты) — здесь
+          // профиль мог не создаться. До-создаём его из сохранённого ник/тега.
+          let pendingNick: string | null = null;
+          let pendingTag: string | null = null;
+          try {
+            const raw = JSON.parse(window.localStorage.getItem("anithink:pending-profile") ?? "{}");
+            pendingNick = raw?.nickname || null;
+            pendingTag = raw?.tag || null;
+          } catch {
+            /* ignore */
+          }
+          if (pendingNick && pendingTag) {
+            try {
+              await supabase.from("profiles").upsert(
+                {
+                  id: user.id,
+                  email: user.email,
+                  nickname: pendingNick,
+                  full_name: pendingNick,
+                  tag: pendingTag,
+                },
+                { onConflict: "id" },
+              );
+            } catch {
+              /* ignore — профиль может создать/существовать и так */
+            }
+            try {
+              window.localStorage.removeItem("anithink:pending-profile");
+            } catch {
+              /* ignore */
+            }
+          }
+
           const { data: profile } = await supabase
             .from("profiles")
             .select("id, tag, nickname")
             .eq("id", user.id)
             .maybeSingle();
 
+          // Считаем профиль «завершённым», если у него задан СВОЙ тег, а не
+          // авто-производное из email (сигнал нового Google-юзера, которого
+          // надо отправить на онбординг за ник/тэг/аватар).
+          const emailPrefix = (user.email?.split("@")[0] || "").toLowerCase();
+          const autoDerived =
+            !!profile &&
+            (!profile.tag ||
+              profile.tag === "anithink_user" ||
+              (!!emailPrefix &&
+                (profile.tag.toLowerCase() === emailPrefix ||
+                  (profile.nickname || "").toLowerCase() === emailPrefix)));
+          const forced = window.localStorage.getItem("anithink:needs-onboarding") === "1";
           const completed =
-            profile &&
-            profile.nickname &&
-            profile.tag &&
-            profile.tag !== "anithink_user";
+            !forced &&
+            !!profile &&
+            !!profile.nickname &&
+            !!profile.tag &&
+            profile.tag !== "anithink_user" &&
+            !autoDerived;
 
           router.replace(completed ? "/" : "/auth/onboarding");
         } catch {

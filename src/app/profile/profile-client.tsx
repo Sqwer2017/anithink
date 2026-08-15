@@ -80,18 +80,32 @@ export function ProfileClient() {
 
   useEffect(() => {
     let cancelled = false;
+    // Генерация вызова sync: чтобы старый (медленный) sync не перезаписал
+    // свежие данные завершившимся позже. Увеличивается на каждый запуск.
+    let syncGen = 0;
+
+    // Кап количества id, совпадает с MAX_SAVED_ANIME в /api/saved.
+    const MAX_SAVED = 50;
 
     // Загрузка списка аниме по ids. НЕ сбрасываем на 0 при ошибке сети —
-    // иначе статистика мигает/обнуляется.
+    // иначе статистика мигает/обнуляется. При сетевом сбое — несколько повторов.
     const loadAnime = (ids: string[], set: (anime: Anime[]) => void) => {
+      if (cancelled) return;
       if (!ids.length) {
-        if (!cancelled && !authLoading) set([]);
+        if (!authLoading) set([]);
         return;
       }
-      void fetch(`/api/saved?ids=${ids.slice(0, 60).join(",")}`)
-        .then((response) => response.json())
-        .then((data) => { if (!cancelled) set(data); })
-        .catch(() => { /* НЕ обнуляем на сетевой ошибке */ });
+      const idsToFetch = ids.slice(0, MAX_SAVED);
+      const attempt = (retries = 2) => {
+        void fetch(`/api/saved?ids=${idsToFetch.join(",")}`)
+          .then((response) => response.json())
+          .then((data) => { if (!cancelled) set(data); })
+          .catch(() => {
+            // Ретраим пару раз, потом молча оставляем текущее состояние.
+            if (retries > 0) setTimeout(() => attempt(retries - 1), 700);
+          });
+      };
+      attempt();
     };
 
     // Мерджит локальные ids с данными из user_anime (если юзер залогинен)
@@ -102,6 +116,7 @@ export function ProfileClient() {
     };
 
     const sync = async () => {
+      const run = ++syncGen;
       // Пока статус авторизации грузится — не трогаем уже отрисованную статистику
       if (cancelled) return;
 
@@ -109,14 +124,20 @@ export function ProfileClient() {
       setProfile(saved);
       setHidden(saved.isSavedPrivate);
 
-      let historyIds = readIds(HISTORY_STORAGE_KEY);
-      let completedIds = readCompletedIds();
-      let favorIds = readIds("anithink:favorites");
+      const historyIds = readIds(HISTORY_STORAGE_KEY);
+      const completedIds = readCompletedIds();
+      const favorIds = readIds("anithink:favorites");
+
+      // Сначала сразу показываем ЛОКАЛЬНЫЕ данные (гость не ждёт Supabase),
+      // потом при наличии сессии перегрузим с мёждже из БД.
+      loadAnime(historyIds, setRecent);
+      loadAnime(completedIds, setCompleted);
+      loadAnime(favorIds, setFavorites);
 
       // Проверяем сессию в Supabase
       if (supabase) {
         const { data } = await supabase.auth.getUser();
-        if (cancelled) return;
+        if (cancelled || run !== syncGen) return;
         setAuthUser(data.user);
 
         // Если юзер авторизован — подтягиваем данные из базы и мерджим
@@ -156,19 +177,22 @@ export function ProfileClient() {
               .from("user_anime")
               .select("anime_id, is_favorite, watch_status, in_history")
               .eq("user_id", data.user.id);
-            if (userAnime && !cancelled) {
+            if (userAnime && !cancelled && run === syncGen) {
+              let h = historyIds;
+              let c = completedIds;
+              let f = favorIds;
               if (userAnime.some((r) => r.in_history)) {
-                historyIds = mergeWithDb(historyIds, userAnime.filter((r) => r.in_history));
+                h = mergeWithDb(h, userAnime.filter((r) => r.in_history));
               }
               if (userAnime.some((r) => r.watch_status === "completed")) {
-                completedIds = mergeWithDb(
-                  completedIds,
-                  userAnime.filter((r) => r.watch_status === "completed"),
-                );
+                c = mergeWithDb(c, userAnime.filter((r) => r.watch_status === "completed"));
               }
               if (userAnime.some((r) => r.is_favorite)) {
-                favorIds = mergeWithDb(favorIds, userAnime.filter((r) => r.is_favorite));
+                f = mergeWithDb(f, userAnime.filter((r) => r.is_favorite));
               }
+              loadAnime(h, setRecent);
+              loadAnime(c, setCompleted);
+              loadAnime(f, setFavorites);
             }
           } catch (err) {
             // Ошибка сети/запроса к Supabase — НЕ сбрасываем локальные данные
@@ -177,11 +201,8 @@ export function ProfileClient() {
         }
       }
 
-      if (cancelled) return;
+      if (cancelled || run !== syncGen) return;
       setAuthLoading(false);
-      loadAnime(historyIds, setRecent);
-      loadAnime(completedIds, setCompleted);
-      loadAnime(favorIds, setFavorites);
     };
 
     sync();

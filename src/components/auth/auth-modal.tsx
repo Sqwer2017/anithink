@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { toast } from "@/components/providers/toast-provider";
 import { LogIn, UserPlus, X } from "lucide-react";
@@ -23,6 +24,7 @@ function getURL() {
 }
 
 export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
+  const router = useRouter();
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -81,7 +83,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
         }
 
         // Регистрация
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email: cleanEmail,
           password,
           options: {
@@ -92,8 +94,41 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
           },
         });
 
-        if (error) throw error;
-        toast("Регистрация успешна!");
+        if (error) {
+          // 23505 — тег занят (если уникальный индекс создан)
+          if ((error as { code?: string }).code === "23505") {
+            toast(`Тег @${cleanTag} уже занят!`, true);
+            setLoading(false);
+            return;
+          }
+          // 422/weak password и др. — показываем как есть
+          throw error;
+        }
+
+        // Запоминаем введённые ник/тег, чтобы онбординг их подставил и сохранил.
+        // Флаг needs-onboarding гарантирует, что онбординг покажется (не скипнет),
+        // даже если триггер уже создал профиль.
+        try {
+          window.localStorage.setItem(
+            "anithink:pending-profile",
+            JSON.stringify({ nickname: nickname.trim(), tag: cleanTag }),
+          );
+          window.localStorage.setItem("anithink:needs-onboarding", "1");
+        } catch {
+          /* ignore */
+        }
+
+        if (data.session) {
+          // Сессия сразу есть — ведём завершить профиль (ник/тег/аватар).
+          toast("Аккаунт создан! Завершите настройку профиля.");
+          onClose();
+          router.replace("/auth/onboarding");
+          return;
+        }
+
+        // Подтверждение почты включено — юзер кликнет по ссылке и попадёт в
+        // /auth/callback → онбординг, где профиль до-создастся.
+        toast("Проверьте почту и подтвердите регистрацию!");
       } else {
         // Вход
         const { error } = await supabase.auth.signInWithPassword({
