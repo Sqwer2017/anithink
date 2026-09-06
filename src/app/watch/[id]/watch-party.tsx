@@ -46,6 +46,8 @@ export interface PlayerHandle {
   getState: () => PlayState;
   seek: (t: number) => void;
   togglePlay: () => void;
+  /** включить/выключить воспроизведение (приходит издалека по сети) */
+  setPlaying: (play: boolean) => void;
 }
 
 function ControlledVideo(
@@ -77,6 +79,12 @@ function ControlledVideo(
       if (v.paused) void v.play().catch(() => {}); else v.pause();
       // publish slight delay: 'play'/'pause' events also do
       window.setTimeout(publish, 40);
+    },
+    setPlaying: (play) => {
+      const v = videoRef.current;
+      if (!v) return;
+      if (play && v.paused) void v.play().catch(() => {});
+      else if (!play && !v.paused) v.pause();
     },
   }), [snapshot, publish]);
 
@@ -239,7 +247,8 @@ export function WatchParty({ animeId, animeTitle, roomId }: { animeId: string; a
 
   useEffect(() => { if (room.ready) setGateDone(true); }, [room.ready]);
 
-  // приём сетевых команд
+  // приём сетевых команд (от хоста/контролёра) — плавная передача:
+  // реально включаем/ставим на паузу видео + догоняем при рассинхроне > 2 c
   const applyRemoteRef = useRef<(cmd: RoomControl) => void>(() => {});
   applyRemoteRef.current = (cmd: RoomControl) => {
     if (cmd.type === "LOAD_EPISODE") {
@@ -249,14 +258,34 @@ export function WatchParty({ animeId, animeTitle, roomId }: { animeId: string; a
     }
     const h = playerRef.current;
     if (!h) return;
+
     if (cmd.type === "PLAYER_SEEK") { h.seek(cmd.currentTime); return; }
-    // PLAY / PAUSE: зритель догоняет при рассинхроне > 2 с
+
+    // PLAY / PAUSE: применяем реальное состояние воспроизведения
     const mine = h.getState().currentTime;
+    if (cmd.type === "PLAYER_PLAY") h.setPlaying(true);
+    if (cmd.type === "PLAYER_PAUSE") h.setPlaying(false);
+    // догоняем позицию, если отстали/обогнали больше чем на 2 c
     if (Math.abs(mine - cmd.currentTime) > 2) h.seek(cmd.currentTime);
   };
 
   // Автопрокрутка чата
   useEffect(() => { chatBoxRef.current?.scrollTo({ top: chatBoxRef.current.scrollHeight, behavior: "smooth" }); }, [room.chat.length]);
+
+  // Когда в комнату зашёл новый зритель — хост сразу выдаёт свою позицию,
+  // чтобы новичок не просидел в начале, ожидая первый heartbeat.
+  const prevCountRef = useRef(0);
+  useEffect(() => {
+    const n = room.viewerCount;
+    if (isMeHost && n > prevCountRef.current && n >= 2) {
+      const st = playerRef.current?.getState();
+      if (st) {
+        room.emitControl({ type: st.isPlaying ? "PLAYER_PLAY" : "PLAYER_PAUSE", currentTime: st.currentTime });
+      }
+    }
+    prevCountRef.current = n;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room.viewerCount, isMeHost]);
 
   // данные AniLibria
   useEffect(() => {

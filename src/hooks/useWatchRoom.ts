@@ -322,7 +322,7 @@ export function useWatchRoom(options: WatchRoomOptions): UseWatchRoomResult {
       const ph = playheadRef.current?.();
       if (!ph) return;
       emitControl({ type: ph.isPlaying ? "PLAYER_PLAY" : "PLAYER_PAUSE", currentTime: ph.currentTime });
-    }, 5000);
+    }, 4000);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHost, roomId]);

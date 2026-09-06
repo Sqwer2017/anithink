@@ -68,18 +68,29 @@ function AuthCallbackInner() {
           }
           if (pendingNick && pendingTag) {
             try {
-              await supabase.from("profiles").upsert(
+              const cleanTag = pendingTag
+                .trim()
+                .toLowerCase()
+                .replace(/^@+/, "")
+                .replace(/[\s@]/g, "")
+                .replace(/[^a-z0-9_]/g, "")
+                .slice(0, 30);
+              const { error: upErr } = await supabase.from("profiles").upsert(
                 {
                   id: user.id,
+                  user_id: user.id,
                   email: user.email,
-                  nickname: pendingNick,
-                  full_name: pendingNick,
-                  tag: pendingTag,
+                  nickname: pendingNick.trim(),
+                  full_name: pendingNick.trim(),
+                  tag: cleanTag,
                 },
                 { onConflict: "id" },
               );
-            } catch {
-              /* ignore — профиль может создать/существовать и так */
+              if (upErr) {
+                console.error("[Callback Upsert Detail]:", JSON.stringify(upErr, null, 2));
+              }
+            } catch (err) {
+              console.error("[Callback Upsert Error]:", err);
             }
             try {
               window.localStorage.removeItem("anithink:pending-profile");

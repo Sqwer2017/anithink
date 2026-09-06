@@ -147,7 +147,7 @@ export function ProfileClient() {
               .from("profiles")
               .select("nickname, full_name, tag, avatar_url, cover_url, telegram, discord, steam, instagram, bio")
               .eq("id", data.user.id)
-              .single();
+              .maybeSingle();
 
             if (dbProfile) {
               const fetchedName =

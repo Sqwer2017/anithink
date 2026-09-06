@@ -118,7 +118,7 @@ export default function OnboardingPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!supabase || !userId) return;
+    if (!supabase || !userId || saving) return;
 
     const cleanTag = sanitizeTag(tag);
     if (!nickname.trim() || !cleanTag) {
@@ -155,6 +155,7 @@ export default function OnboardingPage() {
       const { error: profileErr } = await supabase.from("profiles").upsert(
         {
           id: userId,
+          user_id: userId,
           nickname: nickname.trim(),
           full_name: nickname.trim(),
           tag: cleanTag,
@@ -164,7 +165,10 @@ export default function OnboardingPage() {
       );
 
       if (profileErr) {
-        console.error("[onboarding] profile upsert:", profileErr);
+        console.error(
+          "[Onboarding Error Detail]:",
+          JSON.stringify(profileErr, null, 2),
+        );
         if (profileErr.code === "23505") {
           toast("Этот тег уже занят, попробуйте другой", true);
         } else {

@@ -160,13 +160,13 @@ export function AnimeWatchCard({ shikimoriId, title, score }: AnimeWatchCardProp
     void syncWatchStatusToUserAnime(animeId, nextStatus as SyncWatchStatus | null);
   };
 
-  /** Открывает комнату совместного просмотра: генерирует id и ведёт на /watch. */
+  /** Открывает комнату совместного просмотра: генерирует id и идёт на /watch в той же вкладке. */
   const startWatchParty = () => {
     const room = makeRoomId();
-    const url = `${window.location.origin}/watch/${animeId}?room=${room}`;
-    window.open(url, "_blank", "noopener,noreferrer");
-    void navigator.clipboard?.writeText(url).catch(() => {});
-    toast("Комната создана — ссылка скопирована, поделитесь с друзьями ✨");
+    const url = `/watch/${animeId}?room=${room}`;
+    void navigator.clipboard?.writeText(`${window.location.origin}${url}`).catch(() => {});
+    toast("Комната создана — ссылка скопирована ✨");
+    router.push(url);
   };
 
   return (

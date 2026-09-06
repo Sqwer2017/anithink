@@ -49,6 +49,12 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
       return;
     }
 
+    // Клиентская валидация длины пароля (до запроса — без лишних 422 на сервере)
+    if (isSignUp && password.length < 6) {
+      toast("Пароль должен быть не короче 6 символов", true);
+      return;
+    }
+
     setLoading(true);
 
     const cleanEmail = email.trim();
@@ -95,13 +101,28 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
         });
 
         if (error) {
-          // 23505 — тег занят (если уникальный индекс создан)
-          if ((error as { code?: string }).code === "23505") {
+          const code = (error as { code?: string; status?: number }).code;
+          const status = (error as { code?: string; status?: number }).status;
+          const msg = error.message || "";
+
+          // 23505 — тег занят (уникальный индекс)
+          if (code === "23505") {
             toast(`Тег @${cleanTag} уже занят!`, true);
             setLoading(false);
             return;
           }
-          // 422/weak password и др. — показываем как есть
+          // Дубликат email (Supabase 422 + "already registered") — дружелюбно
+          const duplicate =
+            code === "user_already_exists" ||
+            status === 422 ||
+            /already registered|already been registered|exists/i.test(msg);
+          if (duplicate && !/Invalid login credentials/i.test(msg)) {
+            toast("Пользователь с таким email уже существует", true);
+            console.error("[Auth Signup Detail]:", JSON.stringify(error, null, 2));
+            setLoading(false);
+            return;
+          }
+          // 422 может быть и из-за валидации/слабого пароля — показываем текст
           throw error;
         }
 
