@@ -1,7 +1,10 @@
 "use client";
 
-import { Heart, ListPlus, Star } from "lucide-react";
+import { Heart, ListPlus, Star, Users } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "@/components/providers/toast-provider";
+import { makeRoomId } from "@/hooks/useWatchRoom";
 import  KinoBoxPlayer  from "@/components/player/kinobox-player";
 import { PlaylistDialog } from "@/components/anime/playlist-dialog";
 import { WATCH_STATUS_STORAGE_KEY } from "@/lib/local-playlists";
@@ -64,6 +67,7 @@ function readRatings(): Record<string, number> {
 
 export function AnimeWatchCard({ shikimoriId, title, score }: AnimeWatchCardProps) {
   const animeId = String(shikimoriId);
+  const router = useRouter();
   const [isFavorite, setIsFavorite] = useState(false);
   const [isInWatchLater, setIsInWatchLater] = useState(false);
   const [personalRating, setPersonalRating] = useState(0);
@@ -156,8 +160,36 @@ export function AnimeWatchCard({ shikimoriId, title, score }: AnimeWatchCardProp
     void syncWatchStatusToUserAnime(animeId, nextStatus as SyncWatchStatus | null);
   };
 
+  /** Открывает комнату совместного просмотра: генерирует id и ведёт на /watch. */
+  const startWatchParty = () => {
+    const room = makeRoomId();
+    const url = `${window.location.origin}/watch/${animeId}?room=${room}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+    void navigator.clipboard?.writeText(url).catch(() => {});
+    toast("Комната создана — ссылка скопирована, поделитесь с друзьями ✨");
+  };
+
   return (
     <section className="max-w-[1300px] rounded-2xl border border-border/60 bg-card p-4 shadow-cyber md:p-5">
+      {/* Кнопка совместного просмотра — рядом с плеером */}
+      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-accent/25 bg-accent/5 px-3 py-2">
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-1.5 text-sm font-bold text-accent">
+            <Users className="h-4 w-4" /> Смотреть вместе
+          </p>
+          <p className="truncate text-xs text-muted">
+            Создайте комнату — друзья присоединятся по ссылке и посмотрят аниме синхронно на AniLibria.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={startWatchParty}
+          className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-bold text-background shadow-neon-sm transition-opacity hover:opacity-90"
+        >
+          <Users className="h-4 w-4" /> Смотреть вместе
+        </button>
+      </div>
+
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_270px]">
         <KinoBoxPlayer shikimoriId={shikimoriId} title={title} />
 

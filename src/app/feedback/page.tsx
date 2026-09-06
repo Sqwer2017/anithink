@@ -23,6 +23,8 @@ export default function FeedbackPage() {
   const [loading, setLoading] = useState(true);
   // Мапа user_id -> tag (для ссылки на профиль)
   const [tags, setTags] = useState<Record<string, { tag: string; avatar_url: string | null }>>({});
+  // Общая (средняя) оценка по ВСЕМ опубликованным отзывам
+  const [summary, setSummary] = useState<{ count: number; avg: number } | null>(null);
 
   // Новая форма отзыва
   // Ник берём из профиля пользователя, поле "имя" не нужно
@@ -98,6 +100,23 @@ export default function FeedbackPage() {
             }
           }
         }
+
+        // Средняя оценка по ВСЕМ опубликованным отзывам (не только по 50 показанным).
+        const { data: allRatings } = await supabase
+          .from("reviews")
+          .select("rating")
+          .eq("is_published", true);
+        if (allRatings && Array.isArray(allRatings)) {
+          const nums = allRatings
+            .map((r) => Number(r?.rating))
+            .filter((n) => typeof n === "number" && !Number.isNaN(n) && n >= 1 && n <= 5);
+          if (nums.length > 0) {
+            const avg = nums.reduce((a, b) => a + b, 0) / nums.length;
+            setSummary({ count: nums.length, avg: Math.round(avg * 10) / 10 });
+          } else {
+            setSummary(null);
+          }
+        }
         setLoading(false);
       });
   };
@@ -155,7 +174,32 @@ export default function FeedbackPage() {
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_340px]">
         {/* Список отзывов */}
         <section>
-          <h2 className="font-display text-xl font-bold">Отзывы пользователей</h2>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="font-display text-xl font-bold">Отзывы пользователей</h2>
+
+            {/* Общая средняя оценка по всем отзывам */}
+            {summary && summary.count > 0 && (
+              <div className="flex items-center gap-3 rounded-2xl border border-accent/30 bg-accent/5 px-4 py-2">
+                <span className="font-display text-2xl font-extrabold text-accent">
+                  {summary.avg.toFixed(1)}
+                </span>
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-0.5">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <Star
+                        key={n}
+                        className={`h-4 w-4 ${n <= Math.round(summary.avg) ? "fill-accent text-accent" : "text-muted"}`}
+                      />
+                    ))}
+                  </div>
+                  <span className="mt-0.5 text-[11px] text-muted">
+                    средняя оценка · {summary.count}{" "}
+                    {summary.count === 1 ? "отзыв" : summary.count < 5 ? "отзыва" : "отзывов"}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
           {loading ? (
             <div className="mt-4 flex items-center justify-center gap-2 py-16 text-muted">
               <Loader2 className="h-5 w-5 animate-spin" /> Загрузка…

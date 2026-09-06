@@ -1,70 +1,56 @@
+# План: Watch Party комнаты через Supabase Realtime
 
-## План: фикс регистрации, статистики/истории в профиле и настроек приватности
+## Что выяснено (архитектура)
+- Только **браузерный** supabase-клиент (`src/lib/supabase.ts`), Realtime доступен по умолчанию; прецедент — `chat-client.tsx` (`postgres_changes`). Presence/Broadcast `.track/.on(...)` ещё нигде не используются.
+- Реально синхронизировать плейбек можно ТОЛЬКО на источнике с настоящим `<video>` = **AniLibria (`CustomPlayer` на ArtPlayer+HLS)**. **Kodik** — внешний `<iframe>`, им JS управлять не может (по вашему выбору источник Kodik тоже оставляем на странице — там работает присутствие+чат, но кнопки-синхрон недоступны с подсказкой переключиться на AniLibria).
+- `CustomPlayer` сейчас не отдаёт наружу файлы управления (нет `forwardRef`/событий) → надо добавить.
+- Страницы комнаты нет — создаю маршрут `/watch/[id]`.
+- Идентичность: паттерн `auth.getUser()` → `profiles.select(id,nickname,tag,avatar_url).eq(id,user.id).maybeSingle()`; гостей пускаем, но (по выбору) комнату доступна только зарегистрированным.
 
-### Что выяснилось (по итогам исследования)
+## Решения по твоим ответам
+- Источники: и Kodik, и AniLibria на странице комнаты; реальная синхронизация — AniLibria.
+- Комната — выделенная страница `/watch/[id]?room=<id>`.
+- Только зарегистрированные пользователи (гостям — экран «Войдите»).
 
-**1. Новые юзеры не могут зарегаться**
-- Строка в `profiles` для нового email/password-юзера создаётся ТОЛЬКО БД-триггером `on_auth_user_created` → `public.handle_new_user()` (`supabase/migrations/2026_auth_onboarding_sync.sql`). App-код для этого пути строку НЕ создаёт (апсайты есть только в onboarding/Google и вручную в профиле).
-- Если триггер устарел/не применился в продакшене — новый `auth.users` не получает строку, либо (если `handle_new_user` падает в ошибке) `after insert` триггер откатывает создание юзера → **регистрация реально ломается**. У старых юзеров строка уже была — потому «старые ок, новые фейл».
-- Дополнительно: после `signUp()` успех судится только по `!error`, строку профиля никто не создаёт и никакой фолбэк-путь для email/password нет.
+## Новое
 
-**2. Статистика / недавние / история «через раз»**
-- Весь вывод зависит от `/api/saved` → Shikimori (best-effort, `fetchAnimeById` с таймаутом/ретраями), а `loadAnime` в профиле **глотает ошибку и не ретраит** — остаются пустые массивы.
-- `sync()` вызывается дважды (mount + `onAuthStateChange`) — гонка, свежий перезаписывается старым.
-- Локальные данные гостя грузятся только ПОСЛЕ `await supabase.auth.getUser()` — задержка.
-- Несоответствие капа: клиент шлёт `slice(0,60)`, сервер режет до 50.
+### 1. `src/hooks/useWatchRoom.ts`
+- `makeRoomId()` — короткий id (7 симв., base36 + crypto.getRandomValues).
+- Хук `useWatchRoom({ roomId, me, canHost })`:
+  - Канал `room:<roomId>` с `broadcast.self=false`.
+  - **Presence**: `track({clientId,userId,nickname,avatar,joinedAt})`; участники in state; **хост** = участник с мин. `joinedAt`; `isHost = own joinedAt` минимальный. Присутствие онлайн-счётчика.
+  - **Broadcast-события**: `PLAYER_PLAY`, `PLAYER_PAUSE`, `PLAYER_SEEK`, `LOAD_EPISODE`, `HEARTBEAT`, `ROOM_CHAT`.
+  - **HEARTBEAT**: хост шлёт раз в 5 с `{currentTime,isPlaying}`; зритель при рассинхроне >2 с делает локальный seek (без ре-отправки).
+  - **Защита цикла**: флаг `isRemoteUpdate` — применяя сетевую команду, плеер не «отзеркаливает» её обратно в канал.
+  - **Счётчик/чат**: сообщения хранятся только в памяти сессии (Room Chat) ключом `id`-уникальный.
+  - API возврата: `{ viewers, isHost, hostAllowedControl, send(msg), broadcastPlay/pause/seek/loadEpisode, onRemote* , subscribeRegistry }`. Сердце контроля: хук как «шина» команд; плеер сам применяет play/pause/seek касательно `video`, дергая `getLocalState()` для heartbeat.
 
-**3. Настройки приватности**
-- Три тумблера сейчас **только localStorage** (`anithink:settings`), в Supabase не сохраняются и не влияют ни на что. Колонок `hide_stats/private_lists/new_episode_notif` в `profiles` нет.
-- Публичный профиль `user/[tag]/user-client.tsx` уже гейтит секции по `favorites_privacy/completed_privacy/history_privacy` (enum `public/friends/close_friends/private`). Часов там сейчас нет.
+### 2. `src/components/player/CustomPlayer.tsx` — импрув
+- Обернуть в `forwardRef`, наружу отдать:
+  - `getTime()`, `getPlaying()`, `seekTo(s)`, `play()`, `pause()`, `getDuration()`, `getCurrentEpisode()`.
+  - Проп `onSync` (колбэк `{t, isPlaying, src, ep}` на изменения времени/паузы — нужно хосту для heartbeat + события `PLAYER_*`).
+- Внутри добавить в `new Artplayer(...)` обработчики `art.on('play'|'pause'|'seeked'|'timeupdate')`, транслируя в `onSync` и внешний `ref`.
+- Внутренние перемотки по перечню серий остаются; при смене серии — тоже `onSync`/broadcast `LOAD_EPISODE`.
 
----
+### 3. `/watch/[id]` страница + комната
+- `src/app/watch/[id]/page.tsx` (server): `fetchAnimeById(id)` → `title`; лёгкая обёртка.
+- `src/app/watch/[id]/watch-party.tsx` (client): 
+  - Гейт авторизации (только зарегистрированные; не залогинен → панель «Войдите»).
+  - Хедер: назад к `/anime/[id]`, кнопка «Скопировать ссылку», статус.
+  - Основной лейаут посреди 2-колоночного (по образцу anime-watch-card): слева плеер, справа панель комнаты.
+  - Плеер: переключатель Kodik ↔ AniLibria. AniLibria = `<CustomPlayer ref=… />` (реальный контент с синхроном); Kodik = iframe (режим без синхрона + подсказка «для совместного просмотра выбери AniLibria»).
+  - **Панель комнаты** (правая колонка, mobile — снизу):
+    - Шапка: «Смотреть вместе», счётчик зрителей онлайн + аватарки участников.
+    - Чат: сообщения с цветными никами (ник из `profiles`), автоскролл вниз, поле + эмодзи-строки.
+    - Ограничение: если не хост — блокировка play/pause/seek (мягкая плашка «Управление у создателя комнаты»); если включён режим свободного управления (хост включил тег) — можно всем (free_control).
 
-### Решения пользователя
-- **Приватный список** → «Только для друзей» (пишем во все `*_privacy` = `'friends'`).
-- **Скрыть статистику часов** → только в публичном профиле (у себя всегда видно).
-- **Уведомления о новых сериях** → сохранять флаг в БД + баннер на `/notifications`.
+### 4. Кнопка «Смотреть вместе» на anime/[id]
+- В `AnimeWatchCard` рядом с плеером/сердцем-звёздами добавить кнопку:
+  - генерирует `makeRoomId()`, копирует и открывает `/watch/<id>?room=<roomId>`.
+  - со secondary actions: копирование ссылки поверх.
 
----
+> Примечание: комнаты живут только через Realtime канал (память присутствия). Никаких новых SQL-таблиц НЕ требуется, и публикация realtime уже активна (канал overlay, не postgres_changes). Доп. миграция не нужна.
 
-### Изменения
-
-**A. SQL миграция `supabase/migrations/2026_fix_signup_plus_privacy.sql` (НОВАЯ, вставишь в Supabase)**
-1. Добавить в `profiles`: `hide_stats boolean not null default false`, `private_lists boolean not null default false`, `new_episode_notif boolean not null default false`.
-2. Пересоздать `public.handle_new_user()` так, чтобы **не могла заблокировать регистрацию**: обернуть `insert` в `begin...exception when others then` → даже если создание профиля падает, `auth.users` остаётся созданным (юзер заходит, профиль до-создастся через onboarding/callback/апсайт).
-3. На всякий случай `alter table profiles add column if not exists avatar_url/email/nickname/tag/full_name` (идемпотентно, чтобы `handle_new_user` не падал на несуществующей колонке).
-4. Пересоздать триггер `on_auth_user_created`.
-
-**B. `src/components/auth/auth-modal.tsx` — страховка при регистрации**
-- После успешного `signUp()`: если `data.user` и есть сессия — **upsert строки profiles прямо из клиента** (RLS `profiles_insert_owner` это позволяет), используя введённые nickname/tag. Это убирает зависимость от триггера в базовом сценарии (email-confirm выключен, что по умолчанию).
-- Если сессии нет (включено подтверждение email) — показать тост «Подтвердите почту по ссылке из письма» и в localStorage сохранить nickname/tag, чтобы `/auth/callback` до-создал профиль.
-
-**C. `src/app/profile/profile-client.tsx` — фикс статистики/недавних/истории**
-- Гонку двух `sync()` убрать: добавить `useRef`-генерацию; старый (неактуальный) sync игнорируется.
-- Локальные списки рендерить СРАЗУ (до `await auth.getUser()`), а после мерджа с БД перезапускать `loadAnime`. Гость не будет ждать Supabase.
-- `loadAnime`: добавить повтор (до ~2 попыток с небольшой паузой) при сетевой ошибке; не сбрасывать на 0.
-- Привести кап на клиенте к 50 (как на сервере), чтобы не обрезались последние.
-
-**D. `src/app/settings/settings-client.tsx` — сохранение в БД**
-- При переключении тумблеров и авторизации upsert в `profiles`: `hide_stats`, `private_lists`, `new_episode_notif`; при «Приватный список» также ставить `favorites_privacy/completed_privacy/history_privacy = 'friends'` (выкл → `'public'`).
-- Локально по-прежнему сохранять в `anithink:settings`; при логине подтягивать текущие значения из профиля.
-
-**E. `src/app/user/[tag]/user-client.tsx` — приватность публичного профиля**
-- Добавить в блок статистики карточку «Затрачено времени X ч» (счёт из метаданных `completed`), которая **скрывается**, если `profile.hide_stats = true`.
-- Приватные списки уже учитываются через `*_privacy=friends` (заглушка с замком для не-друзей).
-
-**F. `src/app/notifications/notifications-client.tsx` — баннер уведомлений**
-- При логине прочитать `new_episode_notif` из profiles; если включён — показать баннер-подсказку вверху страницы о новых сериях. Если выключен — баннер с кнопкой «Включить» (ведёт на /settings).
-
-### Файлы
-1. `supabase/migrations/2026_fix_signup_plus_privacy.sql` — новый (даю текст для вставки в Supabase).
-2. `src/components/auth/auth-modal.tsx`
-3. `src/app/profile/profile-client.tsx`
-4. `src/app/settings/settings-client.tsx`
-5. `src/app/user/[tag]/user-client.tsx`
-6. `src/app/notifications/notifications-client.tsx`
-
-### Проверка
-- `npm run build`.
-- Запуск dev: попытка регистрации (локально), логика профиля, настройки пишутся в БД.
-- Текст SQL дам отдельно — вставишь в Supabase SQL Editor.
+## Проверка
+- `npm run build` (типовые прогоны по новым файлам).
+- Ручной smoke dev: открытие двух вкладок `/watch/[id]?room=X` под двумя аккаунтами → host видит 2 зрителя, сообщения/шуточки инициалов, парсек; контроль перемотки у хоста, наличие `HEARTBEAT`.
