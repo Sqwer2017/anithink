@@ -28,6 +28,15 @@ function makeNonce(): string {
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+/** SHA-256 (hex) от nonce — Google в initialize() ждёт именно ХЕШ, Supabase — сырой. */
+async function hashNonce(nonce: string): Promise<string> {
+  const data = new TextEncoder().encode(nonce);
+  const buf = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 interface GISInitPayload {
   client_id: string;
   ux_mode: "popup";
@@ -286,13 +295,14 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
     }
     setLoading(true);
     try {
-      // Свежий nonce на КАЖДЫЙ клик: тот же передаём и в GIS, и в signInWithIdToken.
+      // Сырой nonce — для Supabase; в Google отдаём его SHA-256 (id_token несёт хеш).
       activeNonce = makeNonce();
+      const hashedNonce = await hashNonce(activeNonce);
       id.initialize({
         client_id: GOOGLE_CLIENT_ID,
         ux_mode: "popup",
         auto_select: false,
-        nonce: activeNonce,
+        nonce: hashedNonce, // ← Google кладёт в token именно ХЕШ
         callback: (response) => {
           void completeGoogle(response.credential);
         },
