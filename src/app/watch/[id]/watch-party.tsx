@@ -4,6 +4,7 @@ import Hls from "hls.js";
 import {
   useEffect, useImperativeHandle, useRef, useState, forwardRef, useCallback,
 } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   Users, Play, Pause, Copy, LogIn, Film, MonitorPlay, Send, ShieldCheck, ShieldOff, Crown,
   Volume2, VolumeX, Maximize2, Minimize2, PictureInPicture2,
@@ -674,39 +675,71 @@ export function WatchParty({ animeId, animeTitle, roomId }: { animeId: string; a
         </div>
       </div>
 
-      {cinema ? (
-        /* ══ КИНО-РЕЖИМ: полностраничный оверлей, видео занимает почти всё, чат — правый край ══ */
-        <div className="fixed inset-0 z-50 flex flex-col bg-black">
-          {/* верхний мини-бар */}
-          <div className="flex items-center justify-between gap-3 bg-black/90 px-4 py-2 text-white/90">
-            <span className="flex items-center gap-2 truncate text-sm font-bold">
-              <Maximize2 className="h-4 w-4 text-accent" /> Кино · {activeEp || animeTitle}
-            </span>
-            <div className="flex items-center gap-2">
-              {!canControl && <span className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-[11px] font-semibold"><ShieldCheck className="h-3.5 w-3.5" /> Управление у создателя</span>}
-              {room.viewerCount > 0 && <span className="hidden items-center gap-1.5 text-xs text-white/60 sm:inline-flex"><span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse-glow" />{room.viewerCount}</span>}
-              <button type="button" onClick={() => { setShowEmoji(false); setCinema(false); }} className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 transition hover:bg-white/20" aria-label="Вернуть" title="Свернуть (Esc)"><Minimize2 className="h-4 w-4" /></button>
-            </div>
-          </div>
+      {/* обычный режим (пока не открыто кино) */}
+      {!cinema && bodyNormal}
 
-          <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px]">
-            {/* видео на всю оставшуюся ширину */}
-            <div className="relative flex min-h-0 items-center justify-center bg-black p-2 sm:p-4">
-              <div className="w-full max-h-full">
-                <ControlledVideoForward ref={playerRef} src={currentSrc} interactive={canControl}
-                  onUserToggle={doToggle} onUserSeek={doSeek} onDenied={denied} />
+      {/* ═══ КИНО-РЕЖИМ: оверлей с живым фоном; видео вписано в кадр; чат съезжает справа ═══ */}
+      <AnimatePresence>
+        {cinema && (
+          <motion.div
+            key="cinema"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="fixed inset-0 z-[60] flex flex-col bg-background"
+            style={{ backgroundImage: "radial-gradient(rgb(var(--accent) / 0.05) 1px, transparent 1px)", backgroundSize: "22px 22px" }}
+          >
+            {/* верхняя плашка */}
+            <div className="flex items-center justify-between gap-3 border-b border-border/60 bg-surface/50 px-4 py-2 backdrop-blur">
+              <span className="flex min-w-0 items-center gap-2 truncate text-sm font-bold text-foreground">
+                <Maximize2 className="h-4 w-4 shrink-0 text-accent" /> Кино · <span className="truncate">{activeEp || animeTitle}</span>
+              </span>
+              <div className="flex items-center gap-2">
+                {!canControl && <span className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-[11px] font-semibold text-muted"><ShieldCheck className="h-3.5 w-3.5 text-accent" /> Управление у создателя</span>}
+                {room.viewerCount > 0 && (
+                  <span className="hidden items-center gap-1.5 text-xs text-muted sm:inline-flex">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse-glow" />{room.viewerCount}
+                  </span>
+                )}
+                <button type="button" onClick={() => { setShowEmoji(false); setCinema(false); }} title="Свернуть (Esc)"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-bold text-background transition hover:opacity-90">
+                  <Minimize2 className="h-3.5 w-3.5" /> Свернуть
+                </button>
               </div>
             </div>
 
-            {/* панель комнаты — правый край, всегда видно */}
-            <div className="h-[44vh] border-t border-white/10 lg:h-auto lg:border-l lg:border-t-0">
-              <RoomSide {...roomSideProps} header="Зрители · чат" heightCls="h-full" />
+            <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px]">
+              {/* видео — вписывается и по ширине, и по высоте кадра */}
+              <div className="relative flex min-h-0 items-center justify-center overflow-hidden p-2 sm:p-4">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9, y: 24 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                  transition={{ type: "spring", stiffness: 150, damping: 22 }}
+                  className="w-auto max-w-full"
+                  // ширина исходя из высоты кадра: 16/9 * оставшееся вертикальное пространство
+                  style={{ width: "min(100%, calc((100vh - 140px) * 16 / 9))" }}
+                >
+                  <ControlledVideoForward ref={playerRef} src={currentSrc} interactive={canControl}
+                    onUserToggle={doToggle} onUserSeek={doSeek} onDenied={denied} />
+                </motion.div>
+              </div>
+
+              {/* чат — правый край, увеличивается */}
+              <motion.div
+                initial={{ x: 40, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: 40, opacity: 0 }}
+                transition={{ type: "spring", stiffness: 200, damping: 26 }}
+                className="relative h-[42vh] border-t border-border/60 lg:h-full lg:border-l lg:border-t-0"
+              >
+                <RoomSide {...roomSideProps} header="Зрители · чат" heightCls="h-full" />
+              </motion.div>
             </div>
-          </div>
-        </div>
-      ) : (
-        bodyNormal
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </section>
   );
 }
