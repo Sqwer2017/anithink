@@ -12,6 +12,33 @@ interface AuthModalProps {
   onSuccess?: () => void;
 }
 
+/** Client ID для Google Identity Services (native ID-token вход). */
+const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
+
+interface GISInitPayload {
+  client_id: string;
+  ux_mode: "popup";
+  auto_select?: boolean;
+  callback: (response: { credential: string }) => void;
+}
+interface GoogleAccountsId {
+  initialize: (config: GISInitPayload) => void;
+  prompt: (cb?: (notification: unknown) => void) => void;
+  renderButton: (
+    parent: HTMLElement,
+    options: { theme?: string; size?: string; shape?: string; text?: string; width?: number },
+  ) => void;
+  disableAutoSelect: () => void;
+}
+declare global {
+  interface Window {
+    google?: { accounts?: { id?: GoogleAccountsId } };
+  }
+}
+
+/** Держим глобальный флаг, чтобы initialize вызывался один раз на страницу. */
+let gisInitDone = false;
+
 /**
  * Базовый URL приложения для OAuth-редиректов.
  * В проде берётся из NEXT_PUBLIC_SITE_URL, локально — из location.origin.
@@ -171,20 +198,96 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
     }
   };
 
-  // Вход через Google
-  const handleGoogleLogin = async () => {
-    if (!supabase) return;
+  // ── Google Identity Services (native ID Token ) ──
+  // Инициализация + приём credential в callback, затем signInWithIdToken.
+  const completeGoogle = async (credential: string) => {
+    if (!supabase) {
+      toast("Supabase клиент недоступен", true);
+      return;
+    }
+    setLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { data, error } = await supabase.auth.signInWithIdToken({
         provider: "google",
-        options: {
-          redirectTo: `${getURL()}/auth/callback`,
-        },
+        token: credential,
       });
       if (error) throw error;
+      const user = data?.user;
+      if (!user) {
+        toast("Не удалось войти через Google", true);
+        return;
+      }
+
+      // Профиль существует и заполнен (ник/тег выбрал пользователь)?
+      let completed = false;
+      try {
+        const { data: prof } = await supabase
+          .from("profiles")
+          .select("id, tag, nickname")
+          .eq("id", user.id)
+          .maybeSingle();
+        completed = !!prof && !!prof.tag && !!prof.nickname && prof.tag !== "anithink_user";
+      } catch {
+        completed = false;
+      }
+
+      if (!completed) {
+        // Новый юзер / нет ника и тега → онбординг даст их ввести и аватар.
+        try {
+          window.localStorage.setItem("anithink:needs-onboarding", "1");
+        } catch {
+          /* ignore */
+        }
+        onClose();
+        router.replace("/auth/onboarding");
+        return;
+      }
+
+      // Уже есть профиль → просто закрываем и парсим сессию
+      toast("С возвращением!");
+      onSuccess?.();
+      onClose();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Ошибка входа через Google";
+      const message =
+        err instanceof Error ? err.message : "Ошибка входа через Google (ID Token)";
+      console.error("[google idtoken] error:", err);
       toast(message, true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    const id = window.google?.accounts?.id;
+    if (!id) {
+      toast("Google Identity Services не загружены, попробуйте ещё раз", true);
+      return;
+    }
+    if (!GOOGLE_CLIENT_ID) {
+      toast("Google Client ID не настроен (нужен NEXT_PUBLIC_GOOGLE_CLIENT_ID)", true);
+      return;
+    }
+    setLoading(true);
+    try {
+      if (!gisInitDone) {
+        id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          ux_mode: "popup",
+          auto_select: false,
+          callback: (response) => {
+            void completeGoogle(response.credential);
+          },
+        });
+        gisInitDone = true;
+      }
+      // Официальный нативный попап выбора аккаунта Google (без показа URL Supabase).
+      setLoading(false); // пока попап/аккаунт-выбор открыт — разблокируем кнопку
+      id.prompt();
+    } catch (err) {
+      console.error("[google gis prompt]", err);
+      toast("Ошибка инициализации Google", true);
+    } finally {
+      // Сессия закрывается позже через callback (completeGoogle), а не здесь.
     }
   };
 

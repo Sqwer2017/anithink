@@ -93,6 +93,12 @@ export default function RootLayout({
 
           {/* Глобальная модалка входа (открывается с любых страниц) */}
           <GlobalAuthModal />
+
+          {/* Google Identity Services — нативный ID Token (без OAuth redirect supabase) */}
+          <Script
+            src="https://accounts.google.com/gsi/client"
+            strategy="afterInteractive"
+          />
         </ThemeProvider>
       </body>
     </html>
