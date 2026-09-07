@@ -129,8 +129,8 @@ export function FeedbackFab() {
 
   return (
     <motion.div
-      className="pointer-events-none fixed z-[45] bottom-24 lg:bottom-6 flex flex-col items-end"
-      style={{ right: rightMV }}
+      className="theater-ghost pointer-events-none fixed z-[45] bottom-24 lg:bottom-6 flex flex-col items-end"
+      style={{ right: rightMV, transition: "opacity 0.3s ease" }}
       animate={{ width: open ? 340 : 56, height: open ? "auto" : 56 }}
       transition={{
         width: { type: "spring", stiffness: 220, damping: 26 },

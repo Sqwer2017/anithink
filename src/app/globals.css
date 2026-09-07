@@ -356,3 +356,9 @@
   background: rgb(var(--accent) / 0.15);
   color: rgb(var(--fg));
 }
+
+/* Театральный режим (страница совместного просмотра): прячем плавающие Синко и флоа-фидбек */
+html[data-theater="1"] .theater-ghost {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}

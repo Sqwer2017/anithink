@@ -25,7 +25,7 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "AniThink — Cyberpunk Edition",
+  title: "AniThink",
   description:
     "Современная киберпанк-платформа для просмотра аниме. Топы, онгоинги, жанры и персональные рекомендации на базе Shikimori API.",
   applicationName: "AniThink",

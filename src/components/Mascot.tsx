@@ -341,7 +341,7 @@ export default function Mascot() {
     <div
       ref={containerRef}
       aria-hidden="true"
-      className="pointer-events-none fixed z-50 hidden h-[200px] w-[160px] md:block md:h-[230px] md:w-[180px] lg:h-[320px] lg:w-[250px] [&_canvas]:pointer-events-auto"
+      className="theater-ghost pointer-events-none fixed z-50 hidden h-[200px] w-[160px] md:block md:h-[230px] md:w-[180px] lg:h-[320px] lg:w-[250px] [&_canvas]:pointer-events-auto"
       style={
         pos
           ? { left: pos.x, top: pos.y, right: "auto", bottom: "auto", display: enabled ? undefined : "none" }

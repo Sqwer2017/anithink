@@ -1,6 +1,4 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import { fetchAnimeById } from "@/lib/api/shikimori";
 import { WatchParty } from "./watch-party";
 
@@ -30,14 +28,7 @@ export default async function WatchPage({
   const roomId = typeof searchParams?.room === "string" ? searchParams.room : null;
 
   return (
-    <div className="mx-auto w-full max-w-[1500px] px-4 py-6 md:px-6 lg:px-8">
-      <Link
-        href={`/anime/${params.id}`}
-        className="mb-4 inline-flex items-center gap-2 text-sm text-muted transition-colors hover:text-accent"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        К просмотру аниме
-      </Link>
+    <div className="w-full">
       <WatchParty animeId={params.id} animeTitle={title || `аниме ${params.id}`} roomId={roomId} />
     </div>
   );

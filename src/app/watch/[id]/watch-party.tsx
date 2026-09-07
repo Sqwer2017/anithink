@@ -4,7 +4,6 @@ import Hls from "hls.js";
 import {
   useEffect, useImperativeHandle, useRef, useState, forwardRef, useCallback,
 } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import {
   Users, Play, Pause, Copy, LogIn, Film, MonitorPlay, Send, ShieldCheck, ShieldOff, Crown,
   Volume2, VolumeX, Maximize2, Minimize2, PictureInPicture2,
@@ -465,10 +464,16 @@ export function WatchParty({ animeId, animeTitle, roomId }: { animeId: string; a
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [room.viewerCount, isMeHost]);
 
-  // escape закрывает кино
+  // данные AniLibria
   useEffect(() => {
     if (!cinema) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setCinema(false); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setCinema(false);
+        document.documentElement.setAttribute("data-theater", "");
+        window.dispatchEvent(new CustomEvent("anithink:theater", { detail: false }));
+      }
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [cinema]);
@@ -493,6 +498,13 @@ export function WatchParty({ animeId, animeTitle, roomId }: { animeId: string; a
       .catch((e: unknown) => { if (!mounted) return; setStreamError(e instanceof Error ? e.message : "Ошибка"); setStreamLoading(false); });
     return () => { mounted = false; };
   }, [animeTitle]);
+
+  // при размонтировании (уход со страницы) убираем театр-атрибут с <html>
+  useEffect(() => {
+    return () => {
+      try { document.documentElement.setAttribute("data-theater", ""); } catch { /* ignore */ }
+    };
+  }, []);
 
   const denied = () => toast("Управление у создателя комнаты", true);
   const copyLink = () => { const u = `${window.location.origin}/watch/${animeId}?room=${roomKey}`; void navigator.clipboard?.writeText(u).catch(() => {}); toast("Ссылка на комнату скопирована ✨"); };
@@ -584,11 +596,44 @@ export function WatchParty({ animeId, animeTitle, roomId }: { animeId: string; a
   );
 
   // Полная (обычная) компоновка
-  const bodyNormal = (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-      <div className="min-w-0 space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex rounded-lg border border-border bg-surface p-1">
+
+  /* ════════ ОДИН всегда смонтированный плеер и одна чат-панель.
+   * Кино-режим НЕ пере-монтирует компоненты: тот же <video>/та же RoomSide
+   * просто «расширяются» внутри контейнера, у которого на время кино
+   * включаю fixed-слой высоко над масскотом/fab. Возврат — просто снятие слоя,
+   * плеер не пересоздаётся → управление не теряется. */
+  const isCin = cinema;
+
+  // Переиспользуемая карточка «Серии» (снизу плеера в обычном, и отдельным рядом под видео/чатом в театре)
+  const seriesCard =
+    Object.keys(episodes).length > 0 ? (
+      <div className="rounded-[20px] border border-border bg-card/80 p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Серии</p>
+          {activeEp && <span className="text-[11px] text-accent">{activeEp}</span>}
+        </div>
+        <div className="flex max-h-40 flex-wrap gap-2 overflow-y-auto scrollbar-cyber">
+          {Object.keys(episodes).map((key) => {
+            const ep = episodes[key];
+            const on = ep.hlsUrl === currentSrc;
+            return (
+              <button key={key} type="button" onClick={() => chooseEpisode(ep.hlsUrl, key)}
+                className={`rounded-lg px-3 py-1.5 text-xs border ${on ? "border-accent bg-accent text-background font-bold" : "border-border bg-surface text-muted hover:border-accent/40 hover:text-foreground"}`}>
+                {ep.name || `Серия ${key}`}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    ) : null;
+
+  // Контент слева (видео) общий для обоих режимов — единичный instance.
+  const leftMedia = (
+    <div className="flex min-w-0 flex-col">
+      {/* источник: AniLibria / Kodik (прячем при развороте) */}
+      {!isCin && (
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="flex rounded-lg border border-border bg-surface p-0.5">
             {(["anilibria", "kodik"] as const).map((m) => (
               <button key={m} type="button" onClick={() => setMode(m)}
                 className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition ${mode === m ? "bg-accent text-background shadow-neon-sm" : "text-muted hover:text-foreground"}`}>
@@ -597,149 +642,126 @@ export function WatchParty({ animeId, animeTitle, roomId }: { animeId: string; a
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-2 text-xs text-muted">
-            <span className="inline-flex items-center gap-1.5"><span className={`h-2 w-2 rounded-full ${room.viewerCount > 0 ? "bg-emerald-400 animate-pulse-glow" : "bg-muted"}`} />{room.viewerCount} в сети</span>
-            {isMeHost && (
-              <button type="button" onClick={toggleFree} className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold transition ${(freeCtrlVisible || room.freeControl) ? "bg-amber-400/15 text-amber-300" : "text-muted hover:text-foreground"}`}>
-                {freeCtrlVisible || room.freeControl ? <ShieldOff className="h-3.5 w-3.5" /> : <ShieldCheck className="h-3.5 w-3.5" />}
-                {freeCtrlVisible || room.freeControl ? "Свободное управление" : "Только хост"}
-              </button>
-            )}
-          </div>
-        </div>
-
-        {playerBlock}
-
-        {mode === "kodik" ? (
-          <>
+          {mode === "kodik" && (
             <div className="flex gap-1.5">
               {KODIK_MIRRORS.map((m) => (
-                <button key={m.id} type="button" onClick={() => setKodikServer(m.domain)} className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${kodikServer === m.domain ? "text-accent" : "text-muted hover:text-foreground"}`}>{m.name}</button>
+                <button key={m.id} type="button" onClick={() => setKodikServer(m.domain)}
+                  className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${kodikServer === m.domain ? "text-accent" : "text-muted hover:text-foreground"}`}>{m.name}</button>
               ))}
             </div>
-            <div className="relative aspect-video w-full overflow-hidden rounded-2xl border border-border/60 bg-black shadow-cyber">
-              <iframe key={kodikServer} src={`${kodikServer}/?shikimoriID=${animeId}`} title="Kodik" allow="autoplay; fullscreen; picture-in-picture" allowFullScreen referrerPolicy="origin" className="absolute inset-0 h-full w-full border-0" />
-            </div>
-            <p className="flex items-center gap-1.5 rounded-lg border border-amber-400/25 bg-amber-400/5 px-3 py-2 text-xs text-amber-200/90">
-              <MonitorPlay className="h-3.5 w-3.5 shrink-0" /> Kodik — внешний iframe. Смотрим вместе, но синхрон доступен только на AniLibria.
-            </p>
-          </>
-        ) : (
-          <>
-            {Object.keys(episodes).length > 0 && (
-              <div className="rounded-2xl border border-border bg-card p-4">
-                <div className="mb-2 flex items-center justify-between"><p className="text-xs font-semibold uppercase tracking-wide text-muted">Серии</p>{activeEp && <span className="text-[11px] text-accent">{activeEp}</span>}</div>
-                <div className="flex max-h-40 flex-wrap gap-2 overflow-y-auto scrollbar-cyber">
-                  {Object.keys(episodes).map((key) => {
-                    const ep = episodes[key];
-                    const activeHref = ep.hlsUrl === currentSrc;
-                    return (
-                      <button key={key} type="button" onClick={() => chooseEpisode(ep.hlsUrl, key)}
-                        className={`rounded-lg px-3 py-1.5 text-xs transition border ${activeHref ? "border-accent bg-accent text-background font-bold shadow-neon-sm" : "border-border bg-surface text-muted hover:border-accent/40 hover:text-foreground"}`}>
-                        {ep.name || `Серия ${key}`}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
-      <RoomSide {...roomSideProps} heightCls="h-[560px] lg:h-[680px]" />
+      {/* видео — по источнику */}
+      {mode === "kodik" ? (
+        <div className={isCin ? "aspect-video w-full max-w-full" : "aspect-video w-full"}>
+          <div className="relative h-full w-full overflow-hidden rounded-2xl border border-border/60 bg-black shadow-cyber">
+            <iframe key={kodikServer} src={`${kodikServer}/?shikimoriID=${animeId}`} title="Kodik"
+              allow="autoplay; fullscreen; picture-in-picture" allowFullScreen referrerPolicy="origin"
+              className="absolute inset-0 h-full w-full border-0" />
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className={isCin ? "aspect-video w-full max-w-full" : "aspect-video w-full"}>
+            {playerBlock}
+          </div>
+        </>
+      )}
     </div>
   );
 
-  /* ============== Рендер ============== */
+  // Правый блок (чат/участников) тоже единичный.
+  const sidePanel = (
+    <div className={isCin ? "flex h-full min-h-0 flex-col" : ""}>
+      <RoomSide {...roomSideProps}
+        header={isCin ? "Зрители · чат" : roomSideProps.header}
+        heightCls={isCin ? "h-full rounded-none border-0 bg-transparent shadow-none flex-1" : "h-[520px] lg:h-[640px]"} />
+    </div>
+  );
+
+  /* Единый контейнер: театральный режим расширяется на всю ширину + воздух по бокам */
   return (
-    <section className="space-y-4">
-      {/* Верхняя панель задач: развернуть в кино + копировать */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/70 bg-card px-4 py-3 shadow-cyber">
-        <div className="flex items-center gap-3 min-w-0">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-gradient text-background"><Users className="h-5 w-5" /></span>
+    <div className={
+      isCin
+        ? "w-full max-w-none px-3 transition-all duration-300 ease-in-out xl:px-8"
+        : "mx-auto w-full max-w-[1500px] px-3 transition-all duration-300 ease-in-out md:px-6"}>
+      {/* Верхний бар: обычные функции и переключатель вида */}
+      <div className={isCin
+        ? "flex items-center gap-3 rounded-2xl border border-border/70 bg-card px-4 py-2.5 shadow-panel"
+        : "mb-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/70 bg-card px-4 py-3 shadow-cyber"}
+      >
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent-gradient text-background"><Users className="h-5 w-5" /></span>
           <div className="min-w-0">
-            <h1 className="font-display text-lg font-extrabold leading-tight">Смотреть вместе</h1>
-            <p className="truncate text-xs text-muted">{animeTitle} · комната <span className="font-mono text-accent">#{roomKey.slice(0, 8)}</span> · {isMeHost ? "вы создатель" : "вы гость"}</p>
+            <p className="truncate text-sm font-extrabold leading-tight">Смотреть вместе</p>
+            <p className="truncate text-[11px] text-muted">
+              {animeTitle} · #{roomKey.slice(0, 8)} · {isMeHost ? "вы создатель" : "гость"}
+            </p>
           </div>
         </div>
+
         <div className="flex items-center gap-2">
-          {/* Кино с чатом справа */}
-          {mode === "anilibria" && showPlayer && (
-            <button type="button" onClick={() => { setCinema(true); setShowEmoji(false); }}
-              className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-semibold transition hover:border-accent/60 hover:text-accent">
-              <Maximize2 className="h-4 w-4" /> На весь экран
+          {!isMeHost && !canControl && (
+            <span className="hidden items-center gap-1 rounded-lg border border-border bg-surface px-2 py-1 text-[11px] font-semibold text-muted sm:inline-flex">
+              <ShieldCheck className="h-3 w-3 text-accent" /> Управление у создателя
+            </span>
+          )}
+          {room.viewerCount > 0 && (
+            <span className="hidden items-center gap-1.5 text-xs text-muted sm:inline-flex">
+              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse-glow" />{room.viewerCount}
+            </span>
+          )}
+          {isMeHost && (
+            <button type="button" onClick={toggleFree}
+              className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold ${freeCtrlVisible || room.freeControl ? "bg-amber-400/15 text-amber-300" : "text-muted hover:text-foreground"}`}
+              title="Кто может управлять">
+              {freeCtrlVisible || room.freeControl ? <ShieldOff className="h-3.5 w-3.5" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+              {freeCtrlVisible || room.freeControl ? "Свободно" : "Только хост"}
             </button>
           )}
-          <button type="button" onClick={copyLink} className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-semibold transition hover:border-accent/60 hover:text-accent"><Copy className="h-4 w-4" /> Скопировать</button>
+          <button type="button" onClick={copyLink} className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-muted transition hover:border-accent/60 hover:text-accent">
+            <Copy className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Скопировать</span>
+          </button>
+          {/* Тумблер театрального режима */}
+          {mode === "anilibria" && showPlayer && (
+            <button type="button"
+              onClick={() => {
+                const next = !cinema;
+                setShowEmoji(false);
+                setCinema(next);
+                document.documentElement.setAttribute("data-theater", next ? "1" : "");
+                window.dispatchEvent(new CustomEvent("anithink:theater", { detail: next }));
+              }}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${cinema ? "border border-border bg-surface text-muted hover:text-foreground" : "bg-accent text-background hover:opacity-90"}`}
+              title={cinema ? "Обычный режим (Esc)" : "На весь экран"}>
+              {cinema ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+              {cinema ? "Обычный режим" : "На весь экран"}
+            </button>
+          )}
         </div>
       </div>
 
-      {/* обычный режим (пока не открыто кино) */}
-      {!cinema && bodyNormal}
+      {/* Видео + чат — ЕДИНЫЙ граф, плеер/чат не перемонтируются, меняются лишь классы */}
+      <div className={isCin
+        ? "mt-3 grid min-h-0 grid-cols-1 items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_320px]"
+        : "grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]"}>
+        <div className={isCin ? "flex min-h-0 items-start justify-center overflow-hidden" : "min-w-0"}>
+          {leftMedia}
+        </div>
+        <div className={isCin ? "flex min-h-0 flex-col overflow-hidden rounded-[20px] bg-[#070a13]/80 text-foreground shadow-inner dark" : "h-[520px] lg:h-[640px]"}>
+          {sidePanel}
+        </div>
+      </div>
 
-      {/* ═══ КИНО-РЕЖИМ: оверлей с живым фоном; видео вписано в кадр; чат съезжает справа ═══ */}
-      <AnimatePresence>
-        {cinema && (
-          <motion.div
-            key="cinema"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.25 }}
-            className="fixed inset-0 z-[60] flex flex-col bg-background"
-            style={{ backgroundImage: "radial-gradient(rgb(var(--accent) / 0.05) 1px, transparent 1px)", backgroundSize: "22px 22px" }}
-          >
-            {/* верхняя плашка */}
-            <div className="flex items-center justify-between gap-3 border-b border-border/60 bg-surface/50 px-4 py-2 backdrop-blur">
-              <span className="flex min-w-0 items-center gap-2 truncate text-sm font-bold text-foreground">
-                <Maximize2 className="h-4 w-4 shrink-0 text-accent" /> Кино · <span className="truncate">{activeEp || animeTitle}</span>
-              </span>
-              <div className="flex items-center gap-2">
-                {!canControl && <span className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-[11px] font-semibold text-muted"><ShieldCheck className="h-3.5 w-3.5 text-accent" /> Управление у создателя</span>}
-                {room.viewerCount > 0 && (
-                  <span className="hidden items-center gap-1.5 text-xs text-muted sm:inline-flex">
-                    <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse-glow" />{room.viewerCount}
-                  </span>
-                )}
-                <button type="button" onClick={() => { setShowEmoji(false); setCinema(false); }} title="Свернуть (Esc)"
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-bold text-background transition hover:opacity-90">
-                  <Minimize2 className="h-3.5 w-3.5" /> Свернуть
-                </button>
-              </div>
-            </div>
-
-            <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px]">
-              {/* видео — вписывается и по ширине, и по высоте кадра */}
-              <div className="relative flex min-h-0 items-center justify-center overflow-hidden p-2 sm:p-4">
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9, y: 24 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                  transition={{ type: "spring", stiffness: 150, damping: 22 }}
-                  className="w-auto max-w-full"
-                  // ширина исходя из высоты кадра: 16/9 * оставшееся вертикальное пространство
-                  style={{ width: "min(100%, calc((100vh - 140px) * 16 / 9))" }}
-                >
-                  <ControlledVideoForward ref={playerRef} src={currentSrc} interactive={canControl}
-                    onUserToggle={doToggle} onUserSeek={doSeek} onDenied={denied} />
-                </motion.div>
-              </div>
-
-              {/* чат — правый край, увеличивается */}
-              <motion.div
-                initial={{ x: 40, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                exit={{ x: 40, opacity: 0 }}
-                transition={{ type: "spring", stiffness: 200, damping: 26 }}
-                className="relative h-[42vh] border-t border-border/60 lg:h-full lg:border-l lg:border-t-0"
-              >
-                <RoomSide {...roomSideProps} header="Зрители · чат" heightCls="h-full" />
-              </motion.div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </section>
+      {/* Серии: в обычном под общими видео+чат на всю ширину (справа вровень с чатом),
+          в театре — широкий ряд ниже; везде с респирацией от блока выше */}
+      {seriesCard && (
+        <div className={isCin ? "mt-4" : "mt-2"}>
+          {seriesCard}
+        </div>
+      )}
+    </div>
   );
 }
