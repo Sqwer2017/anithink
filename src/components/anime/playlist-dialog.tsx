@@ -4,6 +4,7 @@ import { Bookmark, Camera, Check, Image as ImageIcon, Plus, X } from "lucide-rea
 import { useState } from "react";
 import { createLocalId, readPlaylists, savePlaylists, type LocalPlaylist } from "@/lib/local-playlists";
 import { compressImage } from "@/lib/local-media";
+import { syncLocalPlaylists } from "@/lib/syncLocalPlaylists";
 import { toast } from "@/components/providers/toast-provider";
 
 const MAX_PLAYLISTS = 10;
@@ -16,6 +17,8 @@ export function PlaylistDialog({ animeId, onClose }: { animeId: string; onClose:
     savePlaylists(next);
     setPlaylists(next);
     window.dispatchEvent(new Event("anithink:playlists-changed"));
+    // Облачный бэкап под user_id (идемпотентная проекция текущих плейлистов)
+    void syncLocalPlaylists();
   };
 
   const createPlaylist = () => {

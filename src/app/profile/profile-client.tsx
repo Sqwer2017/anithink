@@ -178,6 +178,30 @@ export function ProfileClient() {
               .select("anime_id, is_favorite, watch_status, in_history")
               .eq("user_id", data.user.id);
             if (userAnime && !cancelled && run === syncGen) {
+              // БД — источник правды: если там есть записи, «оживляем» локальные списки,
+              // чтобы локальные страницы (/saved, /history) не выглядели пустыми после
+              // очистки localStorage (напр. выход из аккаунта). Пишем назад НЕ символ пустоты:
+              // записи есть — значит сохраняем полнее, ничего не затираем.
+              const all = userAnime as {
+                anime_id: string;
+                is_favorite: boolean;
+                watch_status: string | null;
+                in_history: boolean;
+              }[];
+              const statuses: Record<string, string> = {};
+              all.forEach((r) => {
+                if (r.watch_status) statuses[r.anime_id] = r.watch_status;
+              });
+              const favFromDb = all.filter((r) => r.is_favorite).map((r) => r.anime_id);
+              const histFromDb = all.filter((r) => r.in_history).map((r) => r.anime_id);
+              const mergedFav = [...new Set([...readIds("anithink:favorites"), ...favFromDb])];
+              const mergedHist = [...new Set([...readIds(HISTORY_STORAGE_KEY), ...histFromDb])];
+              window.localStorage.setItem("anithink:favorites", JSON.stringify(mergedFav));
+              window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(mergedHist));
+              if (Object.keys(statuses).length) {
+                window.localStorage.setItem(WATCH_STATUS_STORAGE_KEY, JSON.stringify(statuses));
+              }
+
               let h = historyIds;
               let c = completedIds;
               let f = favorIds;
@@ -193,6 +217,12 @@ export function ProfileClient() {
               loadAnime(h, setRecent);
               loadAnime(c, setCompleted);
               loadAnime(f, setFavorites);
+
+              // DB-first: локальные гостевые данные сливаем в БД ТОЛЬКО после успешного
+              // чтения/рефреша из БД и в серийном порядке (не в onAuthStateChange).
+              if (!cancelled && run === syncGen) {
+                void mergeLocalToSupabase(data.user.id);
+              }
             }
           } catch (err) {
             // Ошибка сети/запроса к Supabase — НЕ сбрасываем локальные данные
@@ -212,9 +242,7 @@ export function ProfileClient() {
       const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
         setAuthUser(session?.user ?? null);
         if (session?.user) {
-          sync();
-          // При входе сливаем локальные сохранёнки/историю в Supabase
-          void mergeLocalToSupabase(session.user.id);
+          sync(); // синк пуш локальных гостевых в БД выполняется ПОСЛЕ успешного года DB (внутри sync)
         } else {
           setAuthLoading(false);
         }

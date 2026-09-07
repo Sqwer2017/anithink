@@ -5,6 +5,7 @@ import { AnimeCard } from "@/components/anime/anime-card";
 import { createLocalId, readPlaylists, savePlaylists, type LocalPlaylist } from "@/lib/local-playlists";
 import type { Anime } from "@/lib/api/shikimori";
 import { compressImage } from "@/lib/local-media";
+import { syncLocalPlaylists } from "@/lib/syncLocalPlaylists";
 import { toast } from "@/components/providers/toast-provider";
 
 const MAX_PLAYLISTS = 10;
@@ -30,7 +31,12 @@ export function PlaylistsClient() {
       .then((r) => r.json()).then(setAnime);
   }, [selectedId, selected?.animeIds.join(",")]);
 
-  const persist = (next: LocalPlaylist[]) => { savePlaylists(next); setPlaylists(next); };
+  const persist = (next: LocalPlaylist[]) => {
+    savePlaylists(next);
+    setPlaylists(next);
+    // Облачный бэкап плейлистов под user_id (создание / удаление списков)
+    void syncLocalPlaylists();
+  };
 
   const create = () => {
     if (!name.trim()) return;
