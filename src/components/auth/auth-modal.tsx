@@ -15,10 +15,24 @@ interface AuthModalProps {
 /** Client ID для Google Identity Services (native ID-token вход). */
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
 
+/**
+ * Сервер Supabase для google ОБЯЗАН проверять nonce: Google кладёт nonce в
+ * id_token ТОЛЬКО если мы передали его в initialize(). Значит нельзя убирать
+ * nonce с обеих сторон — надо ОДИН и тот же nonce дать и GIS, и supabase.
+ * Здесь храним текущий «активный» nonce сессии логина.
+ */
+let activeNonce = "";
+function makeNonce(): string {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
 interface GISInitPayload {
   client_id: string;
   ux_mode: "popup";
   auto_select?: boolean;
+  nonce?: string;
   callback: (response: { credential: string }) => void;
 }
 interface GoogleAccountsId {
@@ -210,8 +224,11 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
       const { data, error } = await supabase.auth.signInWithIdToken({
         provider: "google",
         token: credential,
+        nonce: activeNonce, // тот же nonce, что давали Google в initialize()
       });
       if (error) throw error;
+      // Очищаем на всякий случай — каждый вход свежий nonce
+      activeNonce = "";
       const user = data?.user;
       if (!user) {
         toast("Не удалось войти через Google", true);
@@ -269,17 +286,18 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
     }
     setLoading(true);
     try {
-      if (!gisInitDone) {
-        id.initialize({
-          client_id: GOOGLE_CLIENT_ID,
-          ux_mode: "popup",
-          auto_select: false,
-          callback: (response) => {
-            void completeGoogle(response.credential);
-          },
-        });
-        gisInitDone = true;
-      }
+      // Свежий nonce на КАЖДЫЙ клик: тот же передаём и в GIS, и в signInWithIdToken.
+      activeNonce = makeNonce();
+      id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        ux_mode: "popup",
+        auto_select: false,
+        nonce: activeNonce,
+        callback: (response) => {
+          void completeGoogle(response.credential);
+        },
+      });
+      gisInitDone = true;
       // Официальный нативный попап выбора аккаунта Google (без показа URL Supabase).
       setLoading(false); // пока попап/аккаунт-выбор открыт — разблокируем кнопку
       id.prompt();
