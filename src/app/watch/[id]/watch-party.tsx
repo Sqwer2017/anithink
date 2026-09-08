@@ -6,7 +6,7 @@ import {
 } from "react";
 import {
   Users, Play, Pause, Copy, LogIn, Film, MonitorPlay, Send, ShieldCheck, ShieldOff, Crown,
-  Volume2, VolumeX, Maximize2, Minimize2, PictureInPicture2,
+  Volume2, VolumeX, Maximize2, Minimize2, PictureInPicture2, Info,
 } from "lucide-react";
 import { toast } from "@/components/providers/toast-provider";
 import { useWatchRoom, makeRoomId, type RoomControl, type RoomChatMsg } from "@/hooks/useWatchRoom";
@@ -655,13 +655,23 @@ export function WatchParty({ animeId, animeTitle, roomId }: { animeId: string; a
 
       {/* видео — по источнику */}
       {mode === "kodik" ? (
-        <div className={isCin ? "aspect-video w-full max-w-full" : "aspect-video w-full"}>
-          <div className="relative h-full w-full overflow-hidden rounded-2xl border border-border/60 bg-black shadow-cyber">
-            <iframe key={kodikServer} src={`${kodikServer}/?shikimoriID=${animeId}`} title="Kodik"
-              allow="autoplay; fullscreen; picture-in-picture" allowFullScreen referrerPolicy="origin"
-              className="absolute inset-0 h-full w-full border-0" />
+        <>
+          {/* ☩ Presence Mode: прямого HLS у Kodik нет, таймкод не синхронизируем */}
+          <div className="mb-2 flex items-start gap-2 rounded-xl border border-amber-300/25 bg-amber-300/5 px-3 py-2 text-[12px] text-amber-100/80">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+            <span>
+              Синхронизация таймкода доступна только для релизов AniLibria.
+              Для Kodik работает общий чат и статус участников.
+            </span>
           </div>
-        </div>
+          <div className={isCin ? "aspect-video w-full max-w-full" : "aspect-video w-full"}>
+            <div className="relative h-full w-full overflow-hidden rounded-2xl border border-border/60 bg-black shadow-cyber">
+              <iframe key={kodikServer} src={`${kodikServer}/?shikimoriID=${animeId}`} title="Kodik"
+                allow="autoplay; fullscreen; picture-in-picture" allowFullScreen referrerPolicy="origin"
+                className="absolute inset-0 h-full w-full border-0" />
+            </div>
+          </div>
+        </>
       ) : (
         <>
           <div className={isCin ? "aspect-video w-full max-w-full" : "aspect-video w-full"}>

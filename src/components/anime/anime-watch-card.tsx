@@ -17,6 +17,7 @@ import {
 interface AnimeWatchCardProps {
   shikimoriId: string | number;
   title: string;
+  englishName?: string;
   score: number;
 }
 
@@ -65,7 +66,7 @@ function readRatings(): Record<string, number> {
   }
 }
 
-export function AnimeWatchCard({ shikimoriId, title, score }: AnimeWatchCardProps) {
+export function AnimeWatchCard({ shikimoriId, title, englishName, score }: AnimeWatchCardProps) {
   const animeId = String(shikimoriId);
   const router = useRouter();
   const [isFavorite, setIsFavorite] = useState(false);
@@ -191,7 +192,7 @@ export function AnimeWatchCard({ shikimoriId, title, score }: AnimeWatchCardProp
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_270px]">
-        <KinoBoxPlayer shikimoriId={shikimoriId} title={title} />
+        <KinoBoxPlayer shikimoriId={shikimoriId} title={title} englishName={englishName} />
 
         <aside className="flex flex-col rounded-xl border border-border/70 bg-surface-2/40 p-4">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">

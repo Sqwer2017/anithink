@@ -23,17 +23,84 @@ function cleanTitle(s: string): string {
     .trim();
 }
 
-/** Ответ «не найдено» — HTTP 200 (без 404, чтобы не замусоривать консоль браузера). */
-function notFound(message = "Не найдено") {
-  return NextResponse.json({ success: false, items: [], message });
+/** Ответ «не найдено» — HTTP 200 (без 404), с диагностикой reason/sourcesChecked. */
+interface NotFoundInfo {
+  message?: string;
+  reason?: string;
+  sourcesChecked?: string[];
+}
+function notFound(opts: string | NotFoundInfo = "Не найдено") {
+  const info: NotFoundInfo = typeof opts === "string" ? { message: opts, reason: opts } : opts;
+  return NextResponse.json({
+    success: false,
+    items: [],
+    message: info.message || info.reason || "Не найдено",
+    reason: info.reason || info.message || "not_found",
+    sourcesChecked: info.sourcesChecked || [],
+  });
 }
 
-/** Fuzzy-совпадение: очищенный запрос содержится в названии результата. */
-function isFuzzyMatch(query: string, candidate: string): boolean {
-  const q = cleanTitle(query);
-  const c = cleanTitle(candidate);
-  if (!q || !c) return false;
-  return c.includes(q) || q.includes(c) || c.split(" ").slice(0, 2).join(" ") === q.split(" ").slice(0, 2).join(" ");
+/** Токены очищенного названия. */
+function tokens(s: string): string[] {
+  return cleanTitle(s).split(" ")
+    .filter(Boolean);
+}
+
+/** Последовательное совпадение префикса (сколько подряд идётначальных слов). */
+function prefixScore(candidateTokens: string[], queryTokens: string[]): number {
+  let n = 0;
+  const limit = Math.min(candidateTokens.length, queryTokens.length);
+  while (n < limit && candidateTokens[n] === queryTokens[n]) n += 1;
+  return n;
+}
+
+/**
+ * Выбирает лучший кандидат из названий одного релиза. Возвращает null,
+ * если достаточно уверенного совпадения нет (типа «Реинкарнация аристократа»
+ * для запроса «Реинкарнация безработного» — не должно детектиться).
+ */
+function bestCandidateName(query: string, names: string[]): string | null {
+  const qt = tokens(query);
+  if (!qt.length) return null;
+  let best = -1;
+  let bestName: string | null = null;
+
+  for (const raw of names) {
+    const ct = tokens(raw);
+    if (!ct.length) continue;
+    const paired = prefixScore(ct, qt);
+    const equal = ct.join(" ") === qt.join(" ");
+
+    let score = -1;
+    if (equal) score = 1000;
+    else if (paired >= qt.length) score = 500;         // все слова запроса совпали
+    else if (qt.length === 1 && paired === 1) score = 300; // одиночное и совпало
+    // иначе: qt>=2, но совпало только 1 слово -> НЕ проходит (иначе ошибочный выбор)
+
+    if (score > best) {
+      best = score;
+      bestName = raw;
+    }
+  }
+  return best > 0 ? bestName : null;
+}
+
+/** Один поисковый запрос к AniLibria с сопоставлением; возврат alias или null. */
+async function resolveAliasByQuery(qRaw: string, headers: Record<string, string>) {
+  if (!qRaw) return null;
+  const clean = cleanTitle(qRaw) || qRaw;
+  const url = `${ANILIBERTY_API}/app/search/releases?query=${encodeURIComponent(clean)}&limit=25`;
+  const res = await fetch(url, { headers, next: { revalidate: 300 } });
+  if (!res.ok) return null;
+  const json = await res.json().catch(() => null);
+  const results = Array.isArray(json) ? json : (json ? json.data ?? [] : []);
+  if (!results.length) return null;
+  const match = (results as any[]).find((r: any) => {
+    const names = [r?.name?.main, r?.name?.english, r?.name?.alternative]
+      .filter(Boolean) as string[];
+    return bestCandidateName(qRaw, names) != null;
+  });
+  return match ? String(match.alias || "") : null;
 }
 
 /**
@@ -56,10 +123,15 @@ export async function GET(request: NextRequest) {
     searchParams.get("title")?.trim() ||
     searchParams.get("search")?.trim() ||
     searchParams.get("q")?.trim();
+  // Оригинальное англ./ромадзи имя (из Shikimori) — приоритет для AniLibria.
+  const englishName =
+    searchParams.get("name")?.trim() ||
+    searchParams.get("english")?.trim() ||
+    searchParams.get("romaji")?.trim();
 
-  if (!alias && !query) {
+  if (!alias && !query && !englishName) {
     return NextResponse.json(
-      { error: "Укажите параметр title или alias" },
+      { error: "Укажите параметр title / name / alias" },
       { status: 400 },
     );
   }
@@ -72,11 +144,28 @@ export async function GET(request: NextRequest) {
   try {
     let releaseAlias = alias ? alias.toLowerCase() : "";
 
+    // ── 0. Каскад: англ./ромадзи имя первым (надёжнее для AniLibria), затем русское ──
+    if (!releaseAlias) {
+      const attempts = [
+        englishName && cleanTitle(englishName),
+        query && cleanTitle(query),
+      ].filter(Boolean) as string[];
+      for (const attempt of attempts) {
+        releaseAlias = (await resolveAliasByQuery(attempt, headers)) || "";
+        if (releaseAlias) break;
+      }
+    }
+
+    // Ничего для дальнейшего поиска (только если не сработал ни английский, ни русский)
+    if (!releaseAlias && !query && !englishName) {
+      return notFound({ message: "Не удалось сопоставить тайтл в AniLibria", reason: "no_confident_match", sourcesChecked: ["shikimori-english", "shikimori-russian"] });
+    }
+
     // ── 1. Поиск по названию ──
     if (!releaseAlias && query) {
       // Очищаем запрос (убираем сезон/скобки/подзаголовок) для точного поиска в API
       const cleanQuery = cleanTitle(query);
-      const searchUrl = `${ANILIBERTY_API}/app/search/releases?query=${encodeURIComponent(cleanQuery || query)}&limit=10`;
+      const searchUrl = `${ANILIBERTY_API}/app/search/releases?query=${encodeURIComponent(cleanQuery || query)}&limit=25`;
       const searchRes = await fetch(searchUrl, {
         headers,
         next: { revalidate: 300 },
@@ -93,12 +182,18 @@ export async function GET(request: NextRequest) {
         return notFound();
       }
 
-      // Fuzzy-сопоставление по всем названиям (main / english / alternative)
-      const match =
-        results.find((r: any) => {
-          const names = [r?.name?.main, r?.name?.english, r?.name?.alternative].filter(Boolean);
-          return names.some((n: string) => isFuzzyMatch(query, n));
-        }) ?? results[0];
+      // Уверенное сопоставление по всем названиям (main / english / alternative).
+      // Берём первый релиз, у которого хотя бы одно имя надёжно совпадает.
+      // (Для 2-словного запроса требуется совпадение ОБОИХ слов — иначе мимо.)
+      const match = (results as any[]).find((r: any) => {
+        const names = [r?.name?.main, r?.name?.english, r?.name?.alternative]
+          .filter(Boolean) as string[];
+        return bestCandidateName(query, names) != null;
+      });
+
+      if (!match) {
+        return notFound({ message: "Не удалось сопоставить тайтл в AniLibria", reason: "no_confident_match", sourcesChecked: ["shikimori-english", "shikimori-russian"] });
+      }
 
       releaseAlias = String(match?.alias || "").toLowerCase();
       if (!releaseAlias) {

@@ -4,7 +4,7 @@ import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { Menu, X } from "lucide-react";
+import { Menu, X, MessageSquarePlus } from "lucide-react";
 import { MAIN_NAV, PROFILE_NAV, LOGOUT_NAV } from "@/lib/navigation";
 import { ACCENT_THEMES, useTheme, type ThemeAccent } from "@/components/providers/theme-provider";
 import { cn } from "@/lib/utils";
@@ -179,6 +179,19 @@ export function MobileNav() {
                     </Fragment>
                   );
                 })}
+
+                {/* Написать нам */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.dispatchEvent(new Event("anithink:open-feedback"));
+                    setOpen(false);
+                  }}
+                  className="mt-2 flex w-full items-center gap-3 rounded-xl bg-accent/10 px-3 py-2.5 text-sm font-semibold text-accent transition hover:bg-accent/20"
+                >
+                  <MessageSquarePlus className="h-5 w-5" />
+                  Обратная связь
+                </button>
 
                 {/* Темы */}
                 <div className="mt-4">

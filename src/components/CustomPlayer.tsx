@@ -15,6 +15,10 @@ interface CustomPlayerProps {
   title: string;
   /** Прямой alias (опционально, надёжнее названия) */
   alias?: string;
+  /** Оригинальное англ./ромадзи имя (Shikimori) — приоритетный ключ в каскаде */
+  englishName?: string;
+  /** Вызывать, когда AniLibria не нашла релиз (=> бесшовный fallback на Kodik) */
+  onMissingAnilibria?: () => void;
 }
 
 /** Достаёт hex-цвет акцента из CSS-переменной темы */
@@ -29,7 +33,7 @@ function getAccentColor(): string {
   return "#10b981";
 }
 
-export default function CustomPlayer({ title, alias }: CustomPlayerProps) {
+export default function CustomPlayer({ title, alias, englishName, onMissingAnilibria }: CustomPlayerProps) {
   const artContainerRef = useRef<HTMLDivElement>(null);
   const artInstanceRef = useRef<Artplayer | null>(null);
 
@@ -47,19 +51,22 @@ export default function CustomPlayer({ title, alias }: CustomPlayerProps) {
     setEpisodes({});
     setCurrentEpKey("");
 
-    const query = alias
-      ? `alias=${encodeURIComponent(alias)}`
-      : `title=${encodeURIComponent(title)}`;
+    const params = new URLSearchParams();
+    if (alias) params.set("alias", alias);
+    else params.set("title", title);
+    if (englishName) params.set("name", englishName); // приоритетный ангийский ключ в каскаде
+    const query = params.toString();
 
     fetch(`/api/anilibria?${query}`)
       .then((res) => res.json())
       .then((data) => {
         if (!isMounted) return;
-        // API может вернуть { success: false } — это не ошибка, а "озвучка не найдена".
+        // API может вернуть { success: false } — this is «релиз не найден/нет озвучки».
         if (data.success === false) {
           setError(null);
           setEpisodes({});
           setLoading(false);
+          onMissingAnilibria?.(); // указываем хосту плеера включить Kodik + тост
           return;
         }
         if (data.error || !data.episodes) {
@@ -78,7 +85,7 @@ export default function CustomPlayer({ title, alias }: CustomPlayerProps) {
       });
 
     return () => { isMounted = false; };
-  }, [title, alias]);
+  }, [title, alias, englishName]);
 
   // 2. Инициализация и обновление ArtPlayer
   useEffect(() => {

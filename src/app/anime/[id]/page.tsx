@@ -41,6 +41,7 @@ export default async function AnimePage({
     : [];
 
   const title = anime.russian || anime.name || "Без названия";
+  const englishName = Array.isArray(anime.english) ? anime.english[0] : (anime.english || anime.name || "");
   const poster = buildImageUrl(anime.image?.original, "original");
   const score = anime.score ? parseFloat(anime.score) : 0;
   const year = anime.aired_on ? new Date(anime.aired_on).getFullYear() : null;
@@ -146,6 +147,7 @@ export default async function AnimePage({
         <AnimeWatchCard
           shikimoriId={params.id}
           title={title}
+          englishName={englishName}
           score={Number.isFinite(score) ? score : 0}
         />
         <AnimeStatisticsCard

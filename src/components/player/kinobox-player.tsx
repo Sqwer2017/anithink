@@ -3,10 +3,12 @@
 import { MonitorPlay, Film } from "lucide-react";
 import { useState } from "react";
 import CustomPlayer from "@/components/CustomPlayer";
+import { toast } from "@/components/providers/toast-provider";
 
 interface AnimePlayerProps {
   shikimoriId?: string | number | null;
   title: string;
+  englishName?: string;
 }
 
 // ─── Актуальные зеркала Kodik ───
@@ -18,9 +20,25 @@ const KODIK_MIRRORS = [
 
 type PlayerMode = "kodik" | "anilibria";
 
-export function AnimePlayer({ shikimoriId, title }: AnimePlayerProps) {
+export function AnimePlayer({ shikimoriId, title, englishName }: AnimePlayerProps) {
   const [mode, setMode] = useState<PlayerMode>("kodik");
   const [activeServer, setActiveServer] = useState(KODIK_MIRRORS[0].domain);
+  const [noAnilibria, setNoAnilibria] = useState(false);
+
+  // AniLibria не нашёл издатль → бесшовно переключаемся на Kodik + тост.
+  const handleMissingAnilibria = () => {
+    setNoAnilibria(true);
+    setMode("kodik");
+    toast("В AniLibria релиз не найден. Включен плеер Kodik");
+  };
+
+  const enableAnilibria = () => {
+    if (noAnilibria) {
+      toast("В AniLibria релиза нет для этого тайтла", true);
+      return;
+    }
+    setMode("anilibria");
+  };
 
   const sid = shikimoriId ? String(shikimoriId) : "";
 
@@ -45,20 +63,25 @@ export function AnimePlayer({ shikimoriId, title }: AnimePlayerProps) {
 
         {/* Переключатель Kodik / AniLibria */}
         <div className="flex rounded-lg border border-border bg-surface p-1">
-          {(["kodik", "anilibria"] as const).map((item) => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => setMode(item)}
-              className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
-                mode === item
-                  ? "bg-accent text-background shadow-neon-sm"
-                  : "text-muted hover:text-foreground"
-              }`}
-            >
-              {item === "kodik" ? "Kodik" : "AniLibria"}
-            </button>
-          ))}
+          {(["kodik", "anilibria"] as const).map((item) => {
+            const isAnilibriaDisabled = item === "anilibria" && noAnilibria;
+            return (
+              <button
+                key={item}
+                type="button"
+                disabled={isAnilibriaDisabled}
+                onClick={item === "anilibria" ? enableAnilibria : () => setMode("kodik")}
+                title={isAnilibriaDisabled ? "Нет релиза от AniLibria" : undefined}
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                  mode === item
+                    ? "bg-accent text-background shadow-neon-sm"
+                    : "text-muted hover:text-foreground"
+                }`}
+              >
+                {item === "kodik" ? "Kodik" : "AniLibria"}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -112,7 +135,7 @@ export function AnimePlayer({ shikimoriId, title }: AnimePlayerProps) {
         /*
           ════════════ Режим B: AniLibria (ArtPlayer + HLS) ════════════
         */
-        <CustomPlayer title={title} />
+        <CustomPlayer title={title} alias="" englishName={englishName} onMissingAnilibria={handleMissingAnilibria} />
       )}
     </section>
   );

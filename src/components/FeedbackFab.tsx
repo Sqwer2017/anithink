@@ -65,6 +65,18 @@ export function FeedbackFab() {
     })();
   }, []);
 
+  // Телефоны (< md): плавающую кнопку держим скрытой, но её можно открыть из
+  // мобильного drawer (событие “anithink:open-feedback” — см. mobile-nav).
+  useEffect(() => {
+    const openFromMenu = () => {
+      if (!auth) { openAuthModal(); return; } // гость -> вход
+      reset();
+      setOpen(true);
+    };
+    window.addEventListener("anithink:open-feedback", openFromMenu);
+    return () => window.removeEventListener("anithink:open-feedback", openFromMenu);
+  }, [auth]);
+
   // Следим за шириной сайдбара: собственное событие из right-sidebar
   // (идёт каждый кадр spring-анимации → синхронно), ResizeObserver и resize.
   useEffect(() => {
@@ -129,7 +141,12 @@ export function FeedbackFab() {
 
   return (
     <motion.div
-      className="theater-ghost pointer-events-none fixed z-[45] bottom-24 lg:bottom-6 flex flex-col items-end"
+      className={
+        "theater-ghost pointer-events-none fixed flex flex-col transition-[right] duration-300 " +
+        (open
+          ? "inset-x-0 bottom-0 z-[80] items-center justify-end px-3 pb-28 md:inset-x-auto md:bottom-6 md:items-end md:px-0 md:pb-0"
+          : "z-[45] bottom-6 hidden md:flex")
+      }
       style={{ right: rightMV, transition: "opacity 0.3s ease" }}
       animate={{ width: open ? 340 : 56, height: open ? "auto" : 56 }}
       transition={{
